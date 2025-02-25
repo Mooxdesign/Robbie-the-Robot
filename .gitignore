@@ -11,3 +11,34 @@ __pycache__/
 venv/
 env/
 ENV/
+
+# Web interface
+web-interface/node_modules/
+web-interface/dist/
+web-interface/.vite/
+web-interface/coverage/
+web-interface/.env
+web-interface/.env.*
+!web-interface/.env.example
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build artifacts
+build/
+dist/
+*.pyc
+*.pyo
+*.pyd
+.Python
