@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 
-import os
 import sys
+import os
 import time
+import cv2
 import threading
 import numpy as np
-import cv2
-from typing import Optional, List, Tuple
+from typing import List, Dict, Optional, Tuple
+from queue import Queue
 
 # Add src directory to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# Try to import Raspberry Pi specific libraries
-try:
+from config import Config
+from utils.hardware import CAMERA_AVAILABLE
+
+if CAMERA_AVAILABLE:
     from picamera2 import Picamera2
-    IS_RASPBERRY_PI = True
-except ImportError:
-    IS_RASPBERRY_PI = False
-    print("Running vision in simulation mode")
-
-from src.config import Config
+    print("Camera detected - using hardware camera")
+else:
+    print("No camera detected - running in simulation mode")
 
 class VideoStream:
     """
@@ -73,12 +73,12 @@ class VideoStream:
             self.thread.join()
         self.cam.stop()
 
-class VisionController:
-    """Vision processing controller"""
+class VisionModule:
+    """Vision processing module"""
     
     def __init__(self, debug: bool = False):
         """
-        Initialize vision controller
+        Initialize vision module
         
         Args:
             debug: Enable debug output
@@ -94,7 +94,7 @@ class VisionController:
         
         # Initialize camera
         try:
-            if IS_RASPBERRY_PI:
+            if CAMERA_AVAILABLE:
                 self.camera = Picamera2()
                 self.camera.configure(
                     self.camera.create_preview_configuration(
@@ -129,7 +129,7 @@ class VisionController:
         with self._lock:
             if not self.is_running:
                 self.is_running = True
-                if IS_RASPBERRY_PI:
+                if CAMERA_AVAILABLE:
                     self.camera.start()
                 self.processing_thread = threading.Thread(
                     target=self._process_frames,
@@ -150,7 +150,7 @@ class VisionController:
             self.processing_thread = None
             
         if self.camera:
-            if IS_RASPBERRY_PI:
+            if CAMERA_AVAILABLE:
                 self.camera.stop()
             else:
                 self.camera.release()
@@ -181,7 +181,7 @@ class VisionController:
         while self.is_running:
             try:
                 # Get frame
-                if IS_RASPBERRY_PI:
+                if CAMERA_AVAILABLE:
                     frame = self.camera.capture_array()
                 else:
                     ret, frame = self.camera.read()

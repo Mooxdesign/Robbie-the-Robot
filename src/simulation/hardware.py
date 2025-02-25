@@ -97,6 +97,57 @@ class SimulatedServoKit:
             self.servo.append(SimulatedServo(i))
 
 class SimulatedUnicornHATMini:
+    """Simulated Unicorn HAT Mini for testing"""
+    
+    def __init__(self):
+        """Initialize simulated LED matrix"""
+        self.width = 8   # 8 LEDs wide
+        self.height = 4  # 4 LEDs high
+        self.brightness = 0.5
+        self._visualizer = get_visualizer()
+        
+    def set_pixel(self, x: int, y: int, r: int, g: int, b: int):
+        """
+        Set pixel color
+        
+        Args:
+            x: X position (0-7)
+            y: Y position (0-3)
+            r: Red (0-255)
+            g: Green (0-255)
+            b: Blue (0-255)
+        """
+        # Validate coordinates
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return
+            
+        # Scale by brightness
+        r = int(r * self.brightness)
+        g = int(g * self.brightness)
+        b = int(b * self.brightness)
+        
+        # Update visualizer
+        self._visualizer.set_led(x, y, r, g, b)
+        
+    def set_all(self, r: int, g: int, b: int):
+        """Set all pixels to color"""
+        for y in range(self.height):
+            for x in range(self.width):
+                self.set_pixel(x, y, r, g, b)
+                
+    def clear(self):
+        """Clear all pixels"""
+        self._visualizer.clear_leds()
+        
+    def show(self):
+        """Update display - not needed in simulation"""
+        pass
+        
+    def set_brightness(self, brightness: float):
+        """Set LED brightness"""
+        self.brightness = max(0.0, min(1.0, brightness))
+
+class SimulatedUnicornHAT:
     """Simulated LED matrix for testing"""
     
     def __init__(self):

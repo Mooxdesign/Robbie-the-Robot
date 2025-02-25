@@ -5,7 +5,7 @@ import cv2
 import time
 import argparse
 import numpy as np
-from controllers.vision import VisionController
+from modules.vision import VisionModule
 
 def main():
     # Parse arguments
@@ -32,8 +32,8 @@ def main():
     width, height = args.resolution.split('x')
     resolution = (int(width), int(height))
     
-    # Initialize vision controller
-    vision = VisionController(
+    # Initialize vision module
+    vision = VisionModule(
         model_path=model_path,
         label_path=label_path,
         resolution=resolution,

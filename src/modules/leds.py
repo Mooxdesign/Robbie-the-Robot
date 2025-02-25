@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
 
-import threading
+import sys
+import os
 import time
+import threading
 import colorsys
 import numpy as np
 from typing import Tuple, List, Optional
-try:
-    from unicornhatmini import UnicornHATMini
-except ImportError:
-    print("Warning: UnicornHATMini not found, running in simulation mode")
-    UnicornHATMini = None
 
-class LightController:
+# Add src directory to Python path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from config import Config
+from utils.hardware import LED_AVAILABLE
+
+if LED_AVAILABLE:
+    from unicornhatmini import UnicornHATMini
+    print("Unicorn HAT Mini detected")
+else:
+    print("No LED matrix detected - running in simulation mode")
+    from simulation.hardware import SimulatedUnicornHATMini as UnicornHATMini
+
+class LedsModule:
     """
     Controls the Unicorn pHAT LED matrix with various patterns and animations
     """
     
     def __init__(self, brightness: float = 0.5, debug: bool = False):
         """
-        Initialize LED controller
+        Initialize LED module
         
         Args:
             brightness: LED brightness (0.0 to 1.0)
@@ -26,8 +36,8 @@ class LightController:
         """
         self.debug = debug
         self._lock = threading.Lock()
-        self.width = 17
-        self.height = 7
+        self.width = 8   # 8 LEDs wide
+        self.height = 4  # 4 LEDs high
         
         # Initialize LED hardware
         try:

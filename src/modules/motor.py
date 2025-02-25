@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
 
-import os
 import sys
+import os
 import time
 import threading
-import numpy as np
 from typing import Optional, Dict, Tuple
 
 # Add src directory to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# Try to import Raspberry Pi specific libraries
-try:
+from config import Config
+from utils.hardware import MOTORS_AVAILABLE, SERVOS_AVAILABLE
+
+if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
     import board
     from adafruit_motorkit import MotorKit
     from adafruit_servokit import ServoKit
-    import smbus
-    IS_RASPBERRY_PI = True
-except ImportError:
-    from src.simulation.hardware import (
+    print("Motor/servo hardware detected")
+else:
+    print("No motor/servo hardware detected - running in simulation mode")
+    from simulation.hardware import (
         SimulatedMotorKit as MotorKit,
         SimulatedServoKit as ServoKit
     )
-    IS_RASPBERRY_PI = False
-    print("Running motor controller in simulation mode")
 
-from src.config import Config
-
-class MotorController:
+class MotorModule:
     """
     Unified motor controller for both DC motors and servos.
     Handles acceleration limiting and thread safety.
@@ -53,7 +50,7 @@ class MotorController:
         
         # Initialize hardware
         try:
-            if IS_RASPBERRY_PI:
+            if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
                 self.motor_kit = MotorKit(i2c=board.I2C())
                 self.servo_kit = ServoKit(channels=16)
             else:
@@ -95,7 +92,7 @@ class MotorController:
             self.target_right = max(min(right, self.max_speed), -self.max_speed)
             
             # Set speeds immediately in simulation mode
-            if not IS_RASPBERRY_PI:
+            if not (MOTORS_AVAILABLE or SERVOS_AVAILABLE):
                 self.left_speed = self.target_left
                 self.right_speed = self.target_right
                 if self.motor_kit:

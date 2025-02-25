@@ -1,221 +1,250 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import time
 import threading
 import numpy as np
 from typing import Optional, Dict, Any
+from enum import Enum
 
 # Add parent directory to Python path for relative imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import Config
-from src.controllers.motor import MotorController
-from src.controllers.vision import VisionController
-from src.controllers.audio import AudioController
-from src.controllers.voice import VoiceController
-from src.controllers.ai import AIController
-from src.controllers.lights import LightController
+from src.modules.motor import MotorModule
+from src.modules.vision import VisionModule
+from src.modules.audio import AudioModule
+from src.modules.voice import VoiceModule
+from src.modules.conversation import ConversationModule
+from src.modules.leds import LedsModule
+from src.modules.wake_word import WakeWordModule
+from src.modules.speech_to_text import SpeechToTextModule
+
+class RobotState(Enum):
+    """Robot conversation states"""
+    STANDBY = "standby"  # Listening for wake word
+    LISTENING = "listening"  # Converting speech to text
+    PROCESSING = "processing"  # Processing conversation
+    SPEAKING = "speaking"  # Speaking response
 
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
     
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         """Initialize robot controller"""
         self._lock = threading.Lock()
+        self.debug = debug
+        self._state = RobotState.STANDBY
         
         # Load config
         self.config = Config()
         
-        # Initialize subsystems
-        try:
-            self.motor = MotorController()
-        except Exception as e:
-            print(f"Failed to initialize motor controller: {e}")
-            self.motor = None
-            
-        try:
-            self.vision = VisionController()
-        except Exception as e:
-            print(f"Failed to initialize vision controller: {e}")
-            self.vision = None
-            
-        try:
-            self.audio = AudioController()
-        except Exception as e:
-            print(f"Failed to initialize audio controller: {e}")
-            self.audio = None
-            
-        try:
-            self.voice = VoiceController()
-        except Exception as e:
-            print(f"Failed to initialize voice controller: {e}")
-            self.voice = None
-            
-        try:
-            self.ai = AIController()
-        except Exception as e:
-            print(f"Failed to initialize AI controller: {e}")
-            self.ai = None
-            
-        try:
-            self.lights = LightController()
-        except Exception as e:
-            print(f"Failed to initialize LED matrix: {e}")
-            self.lights = None
-            
-        # Set up audio visualization
-        if self.audio and self.lights:
-            self.audio.add_volume_callback(self._audio_callback)
-            
-        # Register cleanup
-        import atexit
-        atexit.register(self.cleanup)
+        # Initialize modules
+        self.leds = LedsModule(debug=debug)
+        self.motor = MotorModule(debug=debug)
+        self.audio = AudioModule(debug=debug)
+        self.wake_word = WakeWordModule(
+            audio_module=self.audio,
+            wake_word="porcupine",
+            access_key=os.getenv("PICOVOICE_ACCESS_KEY"),  # Get from environment variable
+            debug=debug
+        )
+        self.speech = SpeechToTextModule(
+            audio_module=self.audio,
+            debug=debug
+        )
+        self.voice = VoiceModule(debug=debug)
+        self.conversation = ConversationModule(debug=debug)
         
-    def set_motor_speeds(self, left: float, right: float):
-        """
-        Set motor speeds
-        
-        Args:
-            left: Left motor speed (-1 to 1)
-            right: Right motor speed (-1 to 1)
-        """
-        if self.motor:
-            self.motor.set_motor_speeds(left, right)
-            
-    def move_head(self, pan: Optional[float] = None, tilt: Optional[float] = None):
-        """
-        Move head servos
-        
-        Args:
-            pan: Pan angle in degrees (-90 to 90)
-            tilt: Tilt angle in degrees (-45 to 45)
-        """
-        if self.motor:
-            self.motor.move_head(pan, tilt)
-            
-    def move_arm(self, side: str, position: float):
-        """
-        Move arm servo
-        
-        Args:
-            side: 'left' or 'right'
-            position: Position (0 to 1)
-        """
-        if self.motor:
-            self.motor.move_arm(side, position)
-            
-    def start_vision(self):
-        """Start vision processing"""
-        if self.vision:
-            self.vision.start()
-            
-    def stop_vision(self):
-        """Stop vision processing"""
-        if self.vision:
-            self.vision.stop()
-            
-    def get_frame(self):
-        """Get current camera frame"""
-        if self.vision:
-            return self.vision.get_frame()
-        return None
-        
-    def get_objects(self):
-        """Get detected objects"""
-        if self.vision:
-            return self.vision.get_objects()
-        return []
-        
-    def say(self, text: str, blocking: bool = False):
-        """
-        Speak text using text-to-speech
-        
-        Args:
-            text: Text to speak
-            blocking: Wait for speech to complete
-        """
+        # Register callbacks
+        if self.wake_word:
+            self.wake_word.add_detection_callback(self._on_wake_word)
+        if self.speech:
+            self.speech.add_transcription_callback(self._on_transcription)
         if self.voice:
-            self.voice.speak(text, blocking)
+            self.voice.add_completion_callback(self._on_speech_complete)
             
-    def listen(self, timeout: Optional[float] = None) -> Optional[str]:
-        """
-        Listen for speech and convert to text
-        
-        Args:
-            timeout: How long to wait before giving up
+    def start(self):
+        """Start robot operation"""
+        if self.debug:
+            print("Starting robot...")
             
-        Returns:
-            Recognized text or None if no speech detected
-        """
-        if self.voice:
-            return self.voice.listen(timeout=timeout)
-        return None
+        # Start in standby mode
+        self._set_state(RobotState.STANDBY)
         
-    def process_text(self, text: str) -> str:
-        """
-        Process text with AI and get response
-        
-        Args:
-            text: Input text
+        # Start wake word detection
+        if self.wake_word:
+            self.wake_word.start_listening()
             
-        Returns:
-            AI response
-        """
-        if self.ai:
-            return self.ai.process_text(text)
-        return "AI processing not available"
-        
-    def set_lights(self, r: int, g: int, b: int):
-        """
-        Set LED matrix color
-        
-        Args:
-            r: Red (0-255)
-            g: Green (0-255)
-            b: Blue (0-255)
-        """
-        if self.lights:
-            self.lights.set_all(r, g, b)
-            
-    def clear_lights(self):
-        """Turn off all LEDs"""
-        if self.lights:
-            self.lights.clear()
-            
-    def _audio_callback(self, volume: float):
-        """Handle audio volume updates"""
-        if self.lights:
-            # Map volume to brightness (0-255)
-            brightness = int(volume * 255)
-            self.lights.set_all(brightness, brightness, 0)  # Yellow visualization
+        # Register timeout callback
+        if self.speech:
+            self.speech.add_timeout_callback(self._return_to_standby)
             
     def stop(self):
-        """Stop all subsystems"""
+        """Stop robot operation"""
+        if self.debug:
+            print("Stopping robot...")
+            
+        # Stop all listening
+        if self.wake_word:
+            self.wake_word.stop_listening()
+        if self.speech:
+            self.speech.stop_listening()
+            
+        # Clean up
+        self._cleanup()
+            
+    def _set_state(self, new_state: RobotState):
+        """
+        Set robot state and update LEDs
+        
+        Args:
+            new_state: New state to set
+        """
+        if self.debug:
+            print(f"State transition: {self._state} -> {new_state}")
+            
+        self._state = new_state
+        
+        # Update LED colors based on state
+        if self.leds:
+            if new_state == RobotState.STANDBY:
+                self.leds.set_all(0, 127, 0)  # Green
+            elif new_state == RobotState.LISTENING:
+                self.leds.set_all(0, 0, 127)  # Blue
+            elif new_state == RobotState.PROCESSING:
+                self.leds.set_all(127, 0, 127)  # Purple
+            elif new_state == RobotState.SPEAKING:
+                self.leds.set_all(127, 127, 0)  # Yellow
+                
+    def _on_wake_word(self):
+        """Handle wake word detection"""
+        if self.debug:
+            print(f"Wake word detected in state: {self._state}")
+            
+        if self._state != RobotState.STANDBY:
+            if self.debug:
+                print(f"Ignoring wake word in {self._state} state")
+            return
+            
+        if self.debug:
+            print("Wake word detected!")
+            
+        # Stop wake word detection first
+        if self.wake_word:
+            self.wake_word.stop_listening()
+            
+        # Start speech recognition before changing state
+        if self.speech:
+            if self.debug:
+                print("Starting speech recognition")
+            self.speech.start_listening()
+            
+        # Set state last (updates LEDs)
+        self._set_state(RobotState.LISTENING)
+            
+    def _on_transcription(self, text: str):
+        """
+        Handle speech transcription
+        
+        Args:
+            text: Transcribed text
+        """
+        if not text:
+            return
+            
+        if self.debug:
+            print(f"\nTranscribed: {text}")
+            
+        # Check for conversation end
+        if text.lower().strip() == "thanks robbie":
+            self._return_to_standby()
+            return
+            
+        # Process with conversation module
+        if self.conversation:
+            # Set state but keep listening
+            self._set_state(RobotState.PROCESSING)
+            
+            # Get AI response
+            response = self.conversation.chat(text)
+            
+            if response:
+                print(f"\nRobbie: {response}")
+                
+                # Stop listening before speaking
+                if self.speech:
+                    if self.debug:
+                        print("Pausing speech recognition for speaking")
+                    self.speech.stop_listening()
+                    
+                # Speak response
+                self._set_state(RobotState.SPEAKING)
+                if self.voice:
+                    if self.debug:
+                        print("Starting speech...")
+                    self.voice.say(response, blocking=False)  # Use non-blocking speech
+            else:
+                print("\nNo response from AI")
+                # Keep listening
+                self._set_state(RobotState.LISTENING)
+                
+    def _on_speech_complete(self):
+        """Handle speech completion"""
+        if self.debug:
+            print("Speech complete, returning to listening")
+            
+        # Return to listening mode
+        self._set_state(RobotState.LISTENING)
+        if self.speech:
+            if self.debug:
+                print("Resuming speech recognition")
+            self.speech.start_listening()
+            
+    def _return_to_standby(self):
+        """Return to standby mode"""
+        if self.debug:
+            print("Returning to standby mode")
+            
+        # Stop speech recognition
+        if self.speech:
+            if self.debug:
+                print("Stopping speech recognition")
+            self.speech.stop_listening()
+            
+        # Start wake word detection
+        if self.wake_word:
+            if self.debug:
+                print("Starting wake word detection")
+            self.wake_word.start_listening()
+            
+        # Set state last
+        self._set_state(RobotState.STANDBY)
+        
+    def _cleanup(self):
+        """Clean up resources"""
         if self.motor:
             self.motor.cleanup()
-            
-        if self.vision:
-            self.vision.cleanup()
-            
+        if self.leds:
+            self.leds.cleanup()
         if self.audio:
             self.audio.cleanup()
-            
         if self.voice:
             self.voice.cleanup()
-            
-        if self.lights:
-            self.lights.cleanup()
-            
-    def cleanup(self):
-        """Clean up resources"""
-        self.stop()
+        if self.conversation:
+            self.conversation.cleanup()
+        if self.wake_word:
+            self.wake_word.cleanup()
+        if self.speech:
+            self.speech.cleanup()
 
 if __name__ == "__main__":
-    robot = RobotController()
-    robot.start_vision()
+    robot = RobotController(debug=True)
+    robot.start()
     
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        robot.cleanup()
+        robot.stop()

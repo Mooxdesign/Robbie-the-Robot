@@ -5,14 +5,14 @@ import threading
 import json
 import numpy as np
 from typing import Dict, Optional
-from .motor import MotorController
+from .motor import MotorModule
 
 class CalibrationController:
     """
     Handles motor and servo calibration routines
     """
     
-    def __init__(self, motor: MotorController, debug: bool = False):
+    def __init__(self, motor: MotorModule, debug: bool = False):
         """
         Initialize calibration controller
         

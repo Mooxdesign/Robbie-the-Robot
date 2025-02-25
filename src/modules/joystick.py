@@ -5,7 +5,7 @@ import time
 from typing import Dict, Optional, Callable, List, Tuple
 import pygame
 
-class JoystickController:
+class Joystick:
     """
     Handles game controller input for robot control
     """
@@ -15,7 +15,7 @@ class JoystickController:
                  deadzone: float = 0.1,
                  debug: bool = False):
         """
-        Initialize joystick controller
+        Initialize joystick module
         
         Args:
             joystick_id: ID of the joystick to use
