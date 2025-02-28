@@ -36,6 +36,8 @@ class RobotController:
         self._lock = threading.Lock()
         self.debug = debug
         self._state = RobotState.STANDBY
+        self._terminal_input_thread = None
+        self._stop_terminal_input = threading.Event()
         
         # Load config
         self.config = Config()
@@ -58,8 +60,8 @@ class RobotController:
         self.conversation = ConversationModule(debug=debug)
         
         # Register callbacks
-        if self.wake_word:
-            self.wake_word.add_detection_callback(self._on_wake_word)
+        # if self.wake_word:
+        #     self.wake_word.add_detection_callback(self._on_wake_word)
         if self.speech:
             self.speech.add_transcription_callback(self._on_transcription)
         if self.voice:
@@ -70,25 +72,46 @@ class RobotController:
         if self.debug:
             print("Starting robot...")
             
-        # Start in standby mode
-        self._set_state(RobotState.STANDBY)
-        
-        # Start wake word detection
-        if self.wake_word:
-            self.wake_word.start_listening()
+        # Start terminal input thread
+        self._stop_terminal_input = threading.Event()
+        self._terminal_input_thread = threading.Thread(target=self._handle_terminal_input)
+        self._terminal_input_thread.daemon = True
+        self._terminal_input_thread.start()
             
-        # Register timeout callback
+        # Start speech recognition before changing state
         if self.speech:
-            self.speech.add_timeout_callback(self._return_to_standby)
+            self.speech.add_timeout_callback(self._on_speech_complete)
+
+            if self.debug:
+                print("Starting speech recognition")
+            self.speech.start_listening()
+            
+        # Set state last (updates LEDs)
+        self._set_state(RobotState.LISTENING)
+        # # Start in standby mode
+        # self._set_state(RobotState.STANDBY)
+        
+        # # Start wake word detection
+        # if self.wake_word:
+        #     self.wake_word.start_listening()
+            
+        # # Register timeout callback
+        # if self.speech:
+        #     self.speech.add_timeout_callback(self._return_to_standby)
             
     def stop(self):
         """Stop robot operation"""
         if self.debug:
             print("Stopping robot...")
             
+        # Stop terminal input thread
+        if self._terminal_input_thread:
+            self._stop_terminal_input.set()
+            self._terminal_input_thread.join()
+            
         # Stop all listening
-        if self.wake_word:
-            self.wake_word.stop_listening()
+        # if self.wake_word:
+        #     self.wake_word.stop_listening()
         if self.speech:
             self.speech.stop_listening()
             
@@ -222,6 +245,23 @@ class RobotController:
         # Set state last
         self._set_state(RobotState.STANDBY)
         
+    def _handle_terminal_input(self):
+        """Handle input from terminal"""
+        while not self._stop_terminal_input.is_set():
+            try:
+                # Read input from terminal
+                text = input()
+                
+                # Only process if in listening state
+                if self._state == RobotState.LISTENING and text.strip():
+                    # Process text same way as speech input
+                    self._on_transcription(text)
+            except EOFError:
+                break  # Exit if input stream is closed
+            except Exception as e:
+                if self.debug:
+                    print(f"Error handling terminal input: {e}")
+                    
     def _cleanup(self):
         """Clean up resources"""
         if self.motor:

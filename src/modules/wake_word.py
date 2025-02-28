@@ -35,6 +35,7 @@ class WakeWordModule:
         
         # Initialize Porcupine
         try:
+            print(f"wake_word={wake_word}, access_key={access_key}")
             self.porcupine = pvporcupine.create(
                 access_key=access_key,
                 keyword_paths=[wake_word] if wake_word.endswith('.ppn') else None,

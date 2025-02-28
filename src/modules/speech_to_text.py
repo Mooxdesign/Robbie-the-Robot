@@ -181,8 +181,8 @@ class SpeechToTextModule:
                 # Check for timeout
                 elapsed = time.time() - self._last_audio
                 if elapsed > self._silence_timeout:
-                    if self.debug:
-                        print("\nSilence timeout")
+                    # if self.debug:
+                        # print("\nSilence timeout")
                     # Notify timeout callbacks
                     for callback in self._timeout_callbacks:
                         try:
