@@ -119,9 +119,9 @@ async def handle_configuration(command: Dict):
     # TODO: Implement actual configuration updates
     print(f"Updating configuration: {config}")
 
-# Mount the static files (will be used after building the Vue.js app)
-app.mount("/", StaticFiles(directory="web-interface/dist", html=True), name="static")
+# Mount the static files (for the frontend)
+import os
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "web-interface", "dist"))
+print(f"Mounting static files from: {frontend_dist}")
+app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")

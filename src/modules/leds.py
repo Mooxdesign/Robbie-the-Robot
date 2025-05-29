@@ -37,8 +37,8 @@ class LedsModule:
         """
         self.debug = debug
         self._lock = threading.Lock()
-        self.width = 8   # 8 LEDs wide
-        self.height = 4  # 4 LEDs high
+        self.width = Config().get('lights', 'width', default=8)
+        self.height = Config().get('lights', 'height', default=4)
         
         # Initialize LED hardware
         try:
@@ -133,7 +133,6 @@ class LedsModule:
         if self.animation_thread:
             self.animation_thread.join(timeout=1)
             self.animation_thread = None
-        self.clear()
         if self.debug:
             print("Animation stopped")
     
