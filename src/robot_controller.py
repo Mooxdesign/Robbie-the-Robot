@@ -11,15 +11,15 @@ from enum import Enum
 # Add parent directory to Python path for relative imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import Config
-from src.modules.motor import MotorModule
-from src.modules.vision import VisionModule
-from src.modules.audio import AudioModule
-from src.modules.voice import VoiceModule
-from src.modules.conversation import ConversationModule
-from src.modules.leds import LedsModule
-from src.modules.wake_word import WakeWordModule
-from src.modules.speech_to_text import SpeechToTextModule
+from config import Config
+from modules.motor import MotorModule
+from modules.vision import VisionModule
+from modules.audio import AudioModule
+from modules.voice import VoiceModule
+from modules.conversation import ConversationModule
+from modules.leds import LedsModule
+from modules.wake_word import WakeWordModule
+from modules.speech_to_text import SpeechToTextModule
 
 class RobotState(Enum):
     """Robot conversation states"""
@@ -27,6 +27,10 @@ class RobotState(Enum):
     LISTENING = "listening"  # Converting speech to text
     PROCESSING = "processing"  # Processing conversation
     SPEAKING = "speaking"  # Speaking response
+
+import threading
+import json
+import websocket  # websocket-client package
 
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
@@ -64,8 +68,36 @@ class RobotController:
         #     self.wake_word.add_detection_callback(self._on_wake_word)
         if self.speech:
             self.speech.add_transcription_callback(self._on_transcription)
+            self.speech.add_audio_level_callback(self._on_audio_level)
         if self.voice:
             self.voice.add_completion_callback(self._on_speech_complete)
+
+        # Start WebSocket thread for backend updates
+        self._ws_url = "ws://localhost:8000/ws"
+        self._ws = None
+        self._ws_thread = threading.Thread(target=self._start_ws_client, daemon=True)
+        self._ws_thread.start()
+
+    def _start_ws_client(self):
+        while True:
+            try:
+                self._ws = websocket.WebSocket()
+                self._ws.connect(self._ws_url)
+                break
+            except Exception as e:
+                if self.debug:
+                    print(f"WebSocket connection failed: {e}, retrying...")
+                import time; time.sleep(2)
+
+    def _send_ws_command(self, command):
+        try:
+            if self.debug:
+                print(f"[DEBUG] _send_ws_command sending: {command}")
+            if self._ws and self._ws.connected:
+                self._ws.send(json.dumps(command))
+        except Exception as e:
+            if self.debug:
+                print(f"WebSocket send failed: {e}")
             
     def start(self):
         """Start robot operation"""
@@ -87,9 +119,9 @@ class RobotController:
             self.speech.start_listening()
             
         # Set state last (updates LEDs)
-        self._set_state(RobotState.LISTENING)
+        # self._set_state(RobotState.LISTENING)
         # # Start in standby mode
-        # self._set_state(RobotState.STANDBY)
+        self._set_state(RobotState.STANDBY)
         
         # # Start wake word detection
         # if self.wake_word:
@@ -176,7 +208,8 @@ class RobotController:
         """
         if not text:
             return
-            
+        # Send to backend
+        self._send_ws_command({"type": "update_transcription", "last_transcription": text})
         if self.debug:
             print(f"\nTranscribed: {text}")
             
@@ -217,13 +250,16 @@ class RobotController:
         """Handle speech completion"""
         if self.debug:
             print("Speech complete, returning to listening")
-            
         # Return to listening mode
         self._set_state(RobotState.LISTENING)
         if self.speech:
-            if self.debug:
-                print("Resuming speech recognition")
-            self.speech.start_listening()
+            if hasattr(self.speech, 'is_listening') and self.speech.is_listening:
+                if self.debug:
+                    print("Speech recognition already running, not restarting.")
+            else:
+                if self.debug:
+                    print("Resuming speech recognition")
+                self.speech.start_listening()
             
     def _return_to_standby(self):
         """Return to standby mode"""
@@ -262,6 +298,31 @@ class RobotController:
                 if self.debug:
                     print(f"Error handling terminal input: {e}")
                     
+    def _on_audio_level(self, audio_level: float):
+        """Handle real-time audio level updates from the audio module."""
+        import time
+        now = time.time()
+        # Throttle: only send if 100ms have passed or value changed by >1 dB
+        if not hasattr(self, '_last_audio_level_sent'):
+            self._last_audio_level_sent = None
+            self._last_audio_level_time = 0
+        send = False
+        if (
+            self._last_audio_level_sent is None or
+            abs(audio_level - self._last_audio_level_sent) > 1 or
+            now - self._last_audio_level_time > 0.1
+        ):
+            send = True
+        if send:
+            self._last_audio_level_sent = audio_level
+            self._last_audio_level_time = now
+            if self.debug:
+                print(f"[DEBUG] _on_audio_level sending dB: {audio_level}")
+            self._send_ws_command({"type": "update_audio_level", "audio_level": float(audio_level)})
+        else:
+            if self.debug:
+                print(f"[DEBUG] _on_audio_level throttled dB: {audio_level}")
+
     def _cleanup(self):
         """Clean up resources"""
         if self.motor:

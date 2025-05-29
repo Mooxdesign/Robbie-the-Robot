@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from src.config import Config
+from config import Config
 
 class ConversationModule:
     """Conversation module for natural language processing and decision making"""
