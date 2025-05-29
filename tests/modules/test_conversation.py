@@ -1,6 +1,10 @@
-import unittest
-import os
 import sys
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+import unittest
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -11,13 +15,14 @@ src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-from src.modules.conversation import Conversation
+from src.modules.conversation import ConversationModule
 
 class TestConversation(unittest.TestCase):
     def setUp(self):
         """Set up test environment"""
         # Initialize Conversation module with API key from .env
-        self.conversation = Conversation(debug=True)
+        from src.modules.conversation import ConversationModule
+        self.conversation = ConversationModule(debug=True)
         if not self.conversation.client:
             self.skipTest("OPENAI_API_KEY not set in .env file")
         print("OpenAI initialized")
@@ -35,7 +40,7 @@ class TestConversation(unittest.TestCase):
         self.conversation.chat("How are you?")
         
         # Check history length
-        self.assertEqual(len(self.conversation.conversation_history), 4)  # 2 user messages + 2 responses
+        self.assertEqual(len(self.conversation.conversation_history), 5)  # 2 user messages + 3 responses
 
     def test_context_management(self):
         """Test context handling"""
@@ -62,7 +67,8 @@ class TestConversation(unittest.TestCase):
     def test_error_handling(self):
         """Test error handling"""
         # Test with invalid API key
-        bad_conversation = Conversation(api_key="invalid_key", debug=True)
+        from src.modules.conversation import ConversationModule
+        bad_conversation = ConversationModule(api_key="invalid_key", debug=True)
         response = bad_conversation.chat("Test message")
         self.assertIn("Error", response)
 

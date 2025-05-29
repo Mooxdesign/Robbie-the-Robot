@@ -1,14 +1,22 @@
+import sys
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 import unittest
 from unittest.mock import MagicMock, patch
 import numpy as np
 import wave
-import os
-import sys
 
-# Add src directory to Python path
-src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
+import sys
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+modules_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src/modules'))
+if modules_path not in sys.path:
+    sys.path.insert(0, modules_path)
 
 from src.modules.audio import AudioModule
 
@@ -21,6 +29,8 @@ class TestAudioModule(unittest.TestCase):
         mock_pyaudio.return_value.open.return_value = self.mock_stream
         
         self.ac = AudioModule(debug=True)
+        # Ensure the mock stream is tracked for cleanup
+        self.ac._streams['test'] = {"stream": self.mock_stream, "callback": None}
         
     def test_play_sound(self):
         """Test playing sound file"""
@@ -35,8 +45,12 @@ class TestAudioModule(unittest.TestCase):
         mock_wave.getnchannels.return_value = 1
         mock_wave.readframes.return_value = test_data
         
-        with patch('wave.open', return_value=mock_wave):
-            self.ac.play_sound("test.wav")
+        with patch('os.path.isfile', return_value=True):
+            mock_context = MagicMock()
+            mock_context.__enter__.return_value = mock_wave
+            mock_context.__exit__.return_value = False
+            with patch('wave.open', return_value=mock_context):
+                self.ac.play_sound("test.wav")
             
         # Verify stream was opened and started
         self.mock_stream.start_stream.assert_called_once()

@@ -1,13 +1,20 @@
+import sys
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 import unittest
 from unittest.mock import MagicMock, patch
 import time
-import os
 import sys
-
-# Add src directory to Python path
-src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+modules_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src/modules'))
+if modules_path not in sys.path:
+    sys.path.insert(0, modules_path)
 
 from src.modules.leds import LedsModule
 
@@ -20,10 +27,16 @@ class TestLedsModule(unittest.TestCase):
         """Test setting light colors"""
         # Test RGB values
         self.lc.set_color(255, 0, 0)  # Red
-        self.assertEqual(self.lc.current_color, (255, 0, 0))
-        
+        self.assertEqual(self.lc.requested_color, (255, 0, 0))
+        brightness = getattr(self.lc.unicorn, 'brightness', 1.0) if hasattr(self.lc, 'unicorn') and self.lc.unicorn else 1.0
+        scaled = (round(255 * brightness), 0, 0)
+        self.assertEqual(self.lc.current_color, scaled)
+
         self.lc.set_color(0, 255, 0)  # Green
-        self.assertEqual(self.lc.current_color, (0, 255, 0))
+        self.assertEqual(self.lc.requested_color, (0, 255, 0))
+        scaled = (0, round(255 * brightness), 0)
+        self.assertEqual(self.lc.current_color, scaled)
+
         
     def test_color_validation(self):
         """Test color value validation"""
@@ -51,12 +64,15 @@ class TestLedsModule(unittest.TestCase):
         # Set full brightness
         self.lc.set_brightness(1.0)
         self.lc.set_color(255, 255, 255)
+        self.assertEqual(self.lc.requested_color, (255, 255, 255))
         self.assertEqual(self.lc.current_color, (255, 255, 255))
         
         # Set half brightness
         self.lc.set_brightness(0.5)
         self.lc.set_color(255, 255, 255)
+        self.assertEqual(self.lc.requested_color, (255, 255, 255))
         self.assertEqual(self.lc.current_color, (128, 128, 128))
+
         
     def test_cleanup(self):
         """Test cleanup"""

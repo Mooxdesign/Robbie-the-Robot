@@ -1,41 +1,54 @@
+import sys
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 import unittest
 from unittest.mock import MagicMock, patch
 import numpy as np
 import time
-import os
 import sys
-
-# Add src directory to Python path
-src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
+import os
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+modules_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src/modules'))
+if modules_path not in sys.path:
+    sys.path.insert(0, modules_path)
 
 from src.modules.speech_to_text import SpeechToTextModule
 from src.modules.audio import AudioModule
 
 class TestSpeechToTextModule(unittest.TestCase):
-    @patch('whisper.load_model')
-    def setUp(self, mock_whisper):
+    def setUp(self):
         """Set up test environment with mocked dependencies"""
-        # Mock Whisper
+        # Patch whisper.load_model
+        patcher = patch('whisper.load_model')
+        self.addCleanup(patcher.stop)
+        mock_whisper_load_model = patcher.start()
         self.mock_whisper = MagicMock()
         self.mock_whisper.transcribe.return_value = {"text": ""}
-        mock_whisper.return_value = self.mock_whisper
-        
+        mock_whisper_load_model.return_value = self.mock_whisper
+
         # Mock AudioModule
         self.mock_audio = MagicMock(spec=AudioModule)
+        self.mock_audio.close_stream = self.mock_audio.stop_stream  # Track both as the same mock
         self.audio_callback = None
-        
+
         def mock_start_stream(callback):
             self.audio_callback = callback
-        
+            return "dummy_stream_id"
+
         self.mock_audio.start_stream.side_effect = mock_start_stream
-        
-        # Create SpeechToTextModule with mocked dependencies
+
+        # Create SpeechToTextModule with mocked dependencies and inject mock whisper
         self.stt = SpeechToTextModule(
             audio_module=self.mock_audio,
-            debug=True
+            debug=True,
+            whisper_model=self.mock_whisper
         )
+
             
     def test_command_registration(self):
         """Test command registration and callback system"""
@@ -56,7 +69,7 @@ class TestSpeechToTextModule(unittest.TestCase):
         # Simulate audio data with speech
         self.mock_whisper.transcribe.return_value = {"text": "test command"}
         audio_data = np.zeros(16000, dtype=np.float32)  # 1 second of silence
-        self.audio_callback(audio_data)
+        self.stt.audio_callback(audio_data)
         
         # Give the processing thread time to run
         time.sleep(0.1)
@@ -74,7 +87,7 @@ class TestSpeechToTextModule(unittest.TestCase):
         
         # Feed audio chunks
         for chunk in chunks:
-            self.audio_callback(chunk)
+            self.stt.audio_callback(chunk)
             
         # Verify Whisper was called with concatenated audio
         time.sleep(0.1)  # Give processing thread time to run
@@ -92,7 +105,7 @@ class TestSpeechToTextModule(unittest.TestCase):
         # Verify no more audio processing occurs
         self.mock_whisper.transcribe.reset_mock()
         audio_data = np.zeros(1000, dtype=np.float32)
-        self.audio_callback(audio_data)
+        self.stt.audio_callback(audio_data)
         
         time.sleep(0.1)
         self.mock_whisper.transcribe.assert_not_called()
