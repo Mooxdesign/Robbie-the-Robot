@@ -31,6 +31,10 @@ class MotorModule:
     """
     
     def __init__(self, debug: bool = False):
+        self._left_arm_position = 0.0
+        self._right_arm_position = 0.0
+        self._head_pan = None
+        self._head_tilt = None
         """
         Initialize motor controller
         
@@ -120,12 +124,13 @@ class MotorModule:
                 # Convert to 0-180 range
                 angle = (pan + 90)  # -90 -> 0, 90 -> 180
                 self.servo_kit.servo[0].angle = angle
-                
+                self._head_pan = pan
             # Set tilt servo (1)
             if tilt is not None:
                 # Convert to 0-180 range, but limit to -45 to 45
                 angle = (tilt + 45) * 2  # -45 -> 0, 45 -> 180
                 self.servo_kit.servo[1].angle = angle
+                self._head_tilt = tilt
                 
     def move_arm(self, side: str, position: float):
         """
@@ -144,8 +149,10 @@ class MotorModule:
             
             if side.lower() == 'left':
                 self.servo_kit.servo[2].angle = angle
+                self._left_arm_position = position
             else:
                 self.servo_kit.servo[3].angle = angle
+                self._right_arm_position = position
         
     def cleanup(self):
         """Clean up resources"""
@@ -158,6 +165,34 @@ class MotorModule:
             self.motor_kit.motor1.throttle = 0
             self.motor_kit.motor2.throttle = 0
             
+    @property
+    def left_arm_position(self) -> float:
+        """Return the last set left arm position (0 to 1)."""
+        with self._lock:
+            return self._left_arm_position
+
+    @property
+    def right_arm_position(self) -> float:
+        """Return the last set right arm position (0 to 1)."""
+        with self._lock:
+            return self._right_arm_position
+
+    @property
+    def head_pan(self) -> float:
+        """Return the last set head pan angle."""
+        with self._lock:
+            return self._head_pan
+
+    @property
+    def head_tilt(self) -> float:
+        """Return the last set head tilt angle."""
+        with self._lock:
+            return self._head_tilt
+
+    def set_speeds(self, left: float, right: float):
+        """Alias for set_motor_speeds."""
+        return self.set_motor_speeds(left, right)
+
     def _update_loop(self):
         """Update motor speeds with acceleration limiting"""
         last_update = time.time()

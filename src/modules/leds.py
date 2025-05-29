@@ -27,6 +27,7 @@ class LedsModule:
     """
     
     def __init__(self, brightness: float = 0.5, debug: bool = False):
+        self.current_color = (0, 0, 0)
         """
         Initialize LED module
         
@@ -75,12 +76,16 @@ class LedsModule:
     
     def set_all(self, r: int, g: int, b: int):
         """Set all pixels to the same color"""
+        self.requested_color = (r, g, b)
+        brightness = getattr(self.unicorn, 'brightness', 1.0) if hasattr(self, 'unicorn') and self.unicorn else 1.0
+        scaled = (round(r * brightness), round(g * brightness), round(b * brightness))
+        self.current_color = scaled
         with self._lock:
             self.buffer = np.full((self.height, self.width, 3), [r, g, b], dtype=np.uint8)
             if self.unicorn:
                 for y in range(self.height):
                     for x in range(self.width):
-                        self.unicorn.set_pixel(x, y, r, g, b)
+                        self.unicorn.set_pixel(x, y, *scaled)
     
     def clear(self):
         """Turn off all pixels"""
@@ -296,6 +301,61 @@ class LedsModule:
             
             self.show()
     
+    def start_pulse(self, r: int, g: int, b: int, duration: float = 1.0):
+        """Start a pulse animation with the given color and duration (seconds)."""
+        if self.is_animating:
+            self.stop_animation()
+        self.is_animating = True
+        color = (r, g, b)
+        def run_pulse():
+            self._pulse_animation(color=color, speed=duration/20)
+            self.is_animating = False
+        self.animation_thread = threading.Thread(target=run_pulse, daemon=True)
+        self.animation_thread.start()
+        if self.debug:
+            print(f"Started pulse animation: color={color}, duration={duration}")
+
+    def start_rainbow(self, duration: float = 1.0):
+        """Start a rainbow animation for the specified duration (seconds)."""
+        if self.is_animating:
+            self.stop_animation()
+        self.is_animating = True
+        def run_rainbow():
+            start = time.time()
+            while time.time() - start < duration:
+                self._rainbow_animation(speed=duration/20)
+            self.is_animating = False
+        self.animation_thread = threading.Thread(target=run_rainbow, daemon=True)
+        self.animation_thread.start()
+        if self.debug:
+            print(f"Started rainbow animation: duration={duration}")
+
+    def set_brightness(self, value: float):
+        """Set the brightness of the LED matrix."""
+        if hasattr(self, 'unicorn') and self.unicorn:
+            try:
+                self.unicorn.set_brightness(value)
+                if hasattr(self, 'requested_color'):
+                    r, g, b = self.requested_color
+                    self.set_color(r, g, b)
+                if self.debug:
+                    print(f"LED brightness set to {value}")
+            except Exception as e:
+                if self.debug:
+                    print(f"Failed to set brightness: {e}")
+
+    def set_color(self, r: int, g: int, b: int):
+        """Set all LEDs to the specified color (with validation)."""
+        for val in (r, g, b):
+            if not (0 <= val <= 255):
+                raise ValueError("Color values must be between 0 and 255")
+        self.set_all(r, g, b)
+
+    @property
+    def animation_running(self) -> bool:
+        """Return True if an animation is running."""
+        return self.is_animating
+
     def cleanup(self):
         """Clean up resources and turn off LEDs"""
         self.stop_animation()

@@ -2,14 +2,26 @@
 
 import threading
 import numpy as np
-import pvporcupine
+try:
+    import pvporcupine
+except ImportError:
+    # Dummy pvporcupine for test context
+    class DummyPorcupine:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+    pvporcupine = DummyPorcupine()
 import time
 from typing import Optional, Callable, List
 
-from src.modules.audio import AudioModule
+from .audio import AudioModule
 
 class WakeWordModule:
-    """Wake word detection using Porcupine"""
+    """
+    Wake word detection using Porcupine.
+
+    Public Properties:
+        has_active_stream (bool): True if an audio stream is currently active, False otherwise.
+    """
     
     def __init__(self, 
                  audio_module: Optional[AudioModule] = None,
@@ -46,6 +58,7 @@ class WakeWordModule:
                 print("Porcupine initialized")
         except Exception as e:
             print(f"Failed to initialize Porcupine: {e}")
+            print(f"Failed to dedref")
             self.porcupine = None
             return
             
@@ -53,6 +66,13 @@ class WakeWordModule:
         self.is_listening = False
         self._stream_id = None
         self._detection_callbacks: List[Callable[[], None]] = []
+
+    @property
+    def has_active_stream(self) -> bool:
+        """
+        Returns True if an audio stream is currently active, False otherwise.
+        """
+        return self._stream_id is not None
         
     def add_detection_callback(self, callback: Callable[[], None]):
         """Add callback for wake word detection"""

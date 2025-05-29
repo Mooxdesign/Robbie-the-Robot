@@ -9,7 +9,9 @@ import pyaudio
 import threading
 from typing import Optional, Callable, List, Dict, Tuple
 
-from src.config import Config
+from config import Config
+
+import wave
 
 class AudioModule:
     """Core audio module for managing audio devices, streams, and routing"""
@@ -19,6 +21,7 @@ class AudioModule:
     FORMAT_INT16 = pyaudio.paInt16
     
     def __init__(self, device_index: Optional[int] = None, debug: bool = False):
+        self._audio_level_callbacks: List[Callable[[float], None]] = []
         """
         Initialize audio module
         
@@ -43,6 +46,19 @@ class AudioModule:
         
         # Initialize PyAudio
         self._initialize_pyaudio()
+
+    def add_audio_level_callback(self, callback: Callable[[float], None]) -> None:
+        """Register a callback for real-time audio level (dB)."""
+        self._audio_level_callbacks.append(callback)
+
+    def _trigger_audio_level_callbacks(self, audio_level: float) -> None:
+        """Trigger all registered audio level callbacks with the given dB level."""
+        for callback in self._audio_level_callbacks:
+            try:
+                callback(audio_level)
+            except Exception as e:
+                if self.debug:
+                    print(f"Error in audio level callback: {e}")
         
     def _initialize_pyaudio(self):
         try:
@@ -146,30 +162,34 @@ class AudioModule:
         
     def stop_stream(self, stream_id: str):
         """
-        Stop an audio stream
-        
+        Pause an audio stream (can be resumed with start_stream).
         Args:
-            stream_id: ID of stream to stop
+            stream_id: ID of stream to pause
         """
         if stream_id not in self._streams:
             raise ValueError(f"Unknown stream ID: {stream_id}")
-            
-        # Just close the stream directly
-        self.close_stream(stream_id)
-        
+        stream = self._streams[stream_id]["stream"]
+        try:
+            stream.stop_stream()
+        except Exception as e:
+            if self.debug:
+                print(f"Error stopping stream: {e}")
+
     def close_stream(self, stream_id: str):
         """
-        Close an audio stream
-        
+        Stop (if needed) and close an audio stream, permanently releasing resources.
         Args:
             stream_id: ID of stream to close
         """
         if stream_id not in self._streams:
             raise ValueError(f"Unknown stream ID: {stream_id}")
-            
         stream = self._streams[stream_id]["stream"]
-        
-        # Force close without trying to stop
+        # Stop if not already stopped
+        try:
+            if stream.is_active():
+                stream.stop_stream()
+        except Exception:
+            pass
         try:
             stream.close()
         except Exception as e:
@@ -177,12 +197,77 @@ class AudioModule:
                 print(f"Error closing stream: {e}")
         finally:
             del self._streams[stream_id]
+
         
-    def cleanup(self):
+    def get_volume(self, signal: np.ndarray) -> float:
+        """Compute RMS volume of an audio signal."""
+        if not isinstance(signal, np.ndarray):
+            raise ValueError("Input signal must be a numpy array")
+        rms = np.sqrt(np.mean(np.square(signal)))
+        return float(rms)
+
+    def get_frequency(self, signal: np.ndarray) -> float:
+        """Estimate the dominant frequency of an audio signal using FFT."""
+        if not isinstance(signal, np.ndarray):
+            raise ValueError("Input signal must be a numpy array")
+        fft = np.fft.fft(signal)
+        freqs = np.fft.fftfreq(len(signal))
+        idx = np.argmax(np.abs(fft))
+        freq = abs(freqs[idx])
+        return float(freq)
+
+    def play_sound(self, filename: str) -> None:
+        """Play a WAV sound file."""
+        if not os.path.isfile(filename):
+            raise FileNotFoundError(f"File not found: {filename}")
+        with wave.open(filename, 'rb') as wf:
+            stream = self._pa.open(
+                format=self._pa.get_format_from_width(wf.getsampwidth()),
+                channels=wf.getnchannels(),
+                rate=wf.getframerate(),
+                output=True
+            )
+            stream.start_stream()
+            data = wf.readframes(wf.getnframes())
+            stream.write(data)
+            stream.stop_stream()
+            stream.close()
+
+    def record(self, duration: float = 1.0) -> bytes:
+        """Record audio for a given duration (seconds)."""
+        if duration <= 0:
+            raise ValueError("Duration must be positive")
+        stream = self._pa.open(
+            format=self.FORMAT_INT16,
+            channels=1,
+            rate=self.default_rate,
+            input=True,
+            frames_per_buffer=self.default_chunk_size
+        )
+        frames = []
+        num_frames = int(self.default_rate / self.default_chunk_size * duration)
+        for _ in range(num_frames):
+            data = stream.read(self.default_chunk_size)
+            frames.append(data)
+        stream.stop_stream()
+        stream.close()
+        return b''.join(frames)
+
+    def cleanup(self) -> None:
         """Clean up resources"""
         print("\nCleaning up audio resources...")
         for stream_id in list(self._streams.keys()):
-            self.close_stream(stream_id)
+            stream = self._streams[stream_id]["stream"]
+            try:
+                stream.stop_stream()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception as e:
+                if self.debug:
+                    print(f"Error closing stream {stream_id}: {e}")
+            del self._streams[stream_id]
         if self._pa:
             try:
                 self._pa.terminate()

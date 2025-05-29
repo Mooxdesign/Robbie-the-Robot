@@ -29,6 +29,7 @@ class VoiceModule(threading.Thread):
         self.voice_id = voice_id
         
         # Threading events and locks
+        self._lock = threading.Lock()
         self._cancel = threading.Event()
         self._say = threading.Event()
         self._text_lock = threading.Lock()
@@ -40,40 +41,74 @@ class VoiceModule(threading.Thread):
         
         # Start thread
         self._is_alive.set()
-        self.engine = None
+        self.engine = self._init_engine()  # Eagerly initialize engine for test reliability
         self.start()
+
+    def set_rate(self, rate: int) -> bool:
+        """Set the speech rate."""
+        with self._lock:
+            self.rate = rate
+            if self.engine:
+                self.engine.setProperty('rate', rate)
+            return True
+
+    def set_volume(self, volume: float) -> bool:
+        """Set the speech volume."""
+        with self._lock:
+            # Clamp volume between 0.0 and 1.0
+            self.volume = max(0.0, min(volume, 1.0))
+            if self.engine:
+                self.engine.setProperty('volume', self.volume)
+            return True
+
+    def set_voice(self, voice_id: str) -> bool:
+        """Set the speech voice by ID."""
+        with self._lock:
+            voices = self.get_voices()
+            if voice_id not in voices:
+                if self.debug:
+                    print(f"Voice ID {voice_id} not found")
+                return False
+            self.voice_id = voice_id
+            if self.engine:
+                self.engine.setProperty('voice', voice_id)
+            return True
         
-    def _init_engine(self) -> pyttsx3.Engine:
+    def _init_engine(self) -> Optional[pyttsx3.Engine]:
         """Initialize pyttsx3 engine with properties"""
-        engine = pyttsx3.init()
-        engine.setProperty('rate', self.rate)
-        engine.setProperty('volume', self.volume)
-        
-        # Set George's voice by default
-        george_voice = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\MSTTS_V110_enGB_GeorgeM"
         try:
-            engine.setProperty('voice', george_voice)
-            self.voice_id = george_voice
+            engine = pyttsx3.init()
+            engine.setProperty('rate', self.rate)
+            engine.setProperty('volume', self.volume)
+            
+            # Set George's voice by default
+            george_voice = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\MSTTS_V110_enGB_GeorgeM"
+            try:
+                engine.setProperty('voice', george_voice)
+                self.voice_id = george_voice
+                if self.debug:
+                    print(f"Set default voice to George: {george_voice}")
+            except Exception as e:
+                if self.debug:
+                    print(f"Failed to set George's voice: {e}")
+                # Fallback to first available voice
+                voices = engine.getProperty('voices')
+                if voices:
+                    self.voice_id = voices[0].id
+                    engine.setProperty('voice', self.voice_id)
+                    if self.debug:
+                        print("Using fallback voice")
+            # Connect event handlers
+            engine.connect('finished-utterance', self._on_completed)
+            engine.connect('started-word', self._on_cancel)
             if self.debug:
-                print(f"Set default voice to George: {george_voice}")
+                print("TTS engine initialized")
+            return engine
         except Exception as e:
             if self.debug:
-                print(f"Failed to set George's voice: {e}")
-            # Fallback to first available voice
-            if engine.getProperty('voices'):
-                self.voice_id = engine.getProperty('voices')[0].id
-                engine.setProperty('voice', self.voice_id)
-                if self.debug:
-                    print("Using fallback voice")
-            
-        # Connect event handlers
-        engine.connect('finished-utterance', self._on_completed)
-        engine.connect('started-word', self._on_cancel)
-        
-        if self.debug:
-            print("TTS engine initialized")
-            
-        return engine
+                print(f"Failed to initialize TTS engine: {e}")
+            return None
+
         
     def _find_voice_by_gender(self, gender: str) -> Optional[str]:
         """
@@ -104,6 +139,10 @@ class VoiceModule(threading.Thread):
         Returns:
             bool: True if successful
         """
+        if not self.engine:
+            if self.debug:
+                print("TTS engine not initialized")
+            return False
         if not self._is_alive.is_set():
             if self.debug:
                 print("Speech thread not running")
@@ -224,12 +263,10 @@ class VoiceModule(threading.Thread):
             
     def change_voice(self, voice_id: Optional[str] = None, gender: Optional[str] = None) -> bool:
         """
-        Change the voice used for speech
-        
+        Change the voice used for speech.
         Args:
             voice_id: Specific voice ID to use
             gender: Gender of voice to use ('male' or 'female'), ignored if voice_id is provided
-            
         Returns:
             bool: True if voice was changed successfully
         """
@@ -238,10 +275,9 @@ class VoiceModule(threading.Thread):
                 if self.debug:
                     print("TTS engine not initialized")
                 return False
-                
+
             # If voice_id provided, use it directly
             if voice_id:
-                # Verify voice exists
                 voices = self.get_voices()
                 if voice_id not in voices:
                     if self.debug:
@@ -259,13 +295,12 @@ class VoiceModule(threading.Thread):
                 if self.debug:
                     print("Must provide either voice_id or gender")
                 return False
-                
+
             self.engine.setProperty('voice', self.voice_id)
             if self.debug:
                 voices = self.get_voices()
                 print(f"Changed to voice: {voices[self.voice_id]['name']}")
             return True
-            
         except Exception as e:
             if self.debug:
                 print(f"Error changing voice: {e}")
@@ -274,19 +309,25 @@ class VoiceModule(threading.Thread):
     def run(self):
         """Main speech thread loop"""
         self.engine = self._init_engine()
-        
+        if not self.engine:
+            if self.debug:
+                print("TTS engine initialization failed. Exiting speech thread.")
+            return  # Exit thread cleanly if engine failed to initialize
+
         while self._is_alive.is_set():
             # Wait for speech request
             while self._say.wait(0.1):
                 self._say.clear()
-                
                 # Process all queued text
                 while not self._cancel.is_set() and len(self._text):
                     with self._text_lock:
                         text, blocking = self._text.pop(0)
+                    if not self.engine:
+                        if self.debug:
+                            print("TTS engine unavailable during speech. Skipping.")
+                        continue
                     self.engine.say(text)
                     self.engine.startLoop()
-                    
         # Cleanup
         if self.engine:
             try:
