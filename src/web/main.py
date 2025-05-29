@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import json
@@ -50,7 +50,9 @@ robot_state = {
         "rear": 0,
         "left": 0,
         "right": 0
-    }
+    },
+    "audio_level": 0.0,  # Real-time audio input level (dB or normalized)
+    "last_transcription": ""  # Latest Whisper AI transcription
 }
 
 @app.get("/api/status")
@@ -60,21 +62,45 @@ async def get_status():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    # Send the current robot_state immediately to the new client
+    await websocket.send_text(json.dumps(robot_state))
     try:
         while True:
-            data = await websocket.receive_text()
-            command = json.loads(data)
-            
-            # Handle different command types
-            if command["type"] == "move":
-                # TODO: Implement robot movement control
-                await handle_movement(command)
-            elif command["type"] == "config":
-                # TODO: Implement configuration updates
-                await handle_configuration(command)
-            
-            # Broadcast updated state
-            await manager.broadcast(json.dumps(robot_state))
+            try:
+                data = await websocket.receive_text()
+                try:
+                    command = json.loads(data)
+                except json.JSONDecodeError as e:
+                    logging.warning(f"Malformed JSON received in /ws: {data} ({e})")
+                    continue
+
+                # Handle different command types
+                cmd_type = command.get("type")
+                if cmd_type == "move":
+                    await handle_movement(command)
+                elif cmd_type == "config":
+                    await handle_configuration(command)
+                elif cmd_type == "update_audio_level":
+                    # Update audio level from robot controller/module
+                    robot_state["audio_level"] = command.get("audio_level", 0.0)
+                elif cmd_type == "update_transcription":
+                    # Update transcription from robot controller/module
+                    robot_state["last_transcription"] = command.get("last_transcription", "")
+                elif cmd_type == "ping":
+                    # Ignore keepalive pings
+                    continue
+                else:
+                    logging.info(f"Unknown WebSocket command type: {cmd_type}")
+                    continue
+
+                # Broadcast updated state
+                await manager.broadcast(json.dumps(robot_state))
+            except WebSocketDisconnect:
+                logging.info("WebSocket client disconnected.")
+                break
+            except Exception as e:
+                logging.error(f"WebSocket loop error: {e}")
+                continue
     except Exception as e:
         logging.error(f"WebSocket error: {e}")
     finally:
