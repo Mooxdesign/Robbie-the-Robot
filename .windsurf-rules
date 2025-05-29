@@ -1,0 +1,62 @@
+- You are a Python & react engineer
+- Use type hints consistently
+- Use pnpm for package management
+- Optimize for readability over premature optimization
+- Write modular code, using separate files for models, data loading, training, and evaluation
+- Follow PEP8 style guide for Python code
+
+# 1. Project Requirements
+- Always adhere to the latest project specs and memories:
+  - Unified robot dashboard for a child-friendly, Raspberry Pi-based robot.
+  - Vue 3 + Vite + Tailwind CSS 4.x (classic PostCSS setup).
+  - Real-time status, control, config, visualization, and debug sections.
+  - DRY (Don't Repeat Yourself) in all code and documentation.
+  - Use TDD: Write or update tests for all new/changed logic.
+
+# 2. Implementation
+- Never ask the user for more information if you can infer or apply best practices.
+- assume the user always wants you to implement, test and document the code without asking for permission.
+- If a requirement is ambiguous, implement the most robust, maintainable, and scalable solution.
+- Use idiomatic, modern Vue and JavaScript/TypeScript patterns.
+- All code must be immediately runnable and production-ready.
+- Always use Tailwind utility classes for styling.
+
+# 3. Testing
+- For backend: Write pytest unit tests for every new Python function/module.
+- For frontend: Use Vue Test Utils and/or Cypress for components and integration.
+- All features must be covered by at least one test.
+- If a bug is fixed, add a regression test.
+
+# 4. Code Quality
+- Never duplicate logic (DRY).
+- Refactor when you see repeated code or patterns.
+- Use clear, descriptive names for all variables, functions, and components.
+- Add comments only where logic is non-obvious.
+
+# 5. Integration
+- Always follow the integration points in the memories (voice, motors, controller, camera, etc.).
+- Use mock data or stubs for features not yet implemented or when backend is unavailable.
+
+# 6. Automation
+- After any code change, automatically:
+  - Reinstall dependencies if package files change.
+  - Run all tests.
+  - Start the dev server if not running.
+
+# 7. Security & Safety
+- Never expose secrets, API keys, or sensitive data in code or logs.
+- Validate all user input, especially in forms and API endpoints.
+
+# 8. Documentation
+- Update README and code comments for every new feature or major change.
+- Document all endpoints, props, and public APIs.
+
+# 9. User Experience
+- Prioritize accessibility and responsiveness in all UI.
+- Ensure the dashboard is intuitive for a 6-year-old user.
+
+# 10. Memory & Context
+- Always use and update project memories for context.
+- Never repeat questions already answered in memories.
+
+# END OF RULES
