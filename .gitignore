@@ -1,27 +1,41 @@
-# Environment variables
+# Environment Variables
 .env
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-
-# Virtual environment
-venv/
-env/
-ENV/
-
-# Web interface
-web-interface/node_modules/
-web-interface/dist/
-web-interface/.vite/
-web-interface/coverage/
 web-interface/.env
 web-interface/.env.*
 !web-interface/.env.example
 
-# IDE / Editor
+# Python Bytecode & Caches
+**/__pycache__/
+*.py[cod]
+*$py.class
+**/.pytest_cache/
+**/.mypy_cache/
+.coverage
+htmlcov/
+**/.tox/
+**/.ruff_cache/
+
+# Jupyter Notebooks
+**/.ipynb_checkpoints/
+
+# Packaging
+**/*.egg-info/
+**/pip-wheel-metadata/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.Python
+
+# Web Interface Build & Cache
+web-interface/node_modules/
+web-interface/dist/
+web-interface/.vite/
+web-interface/coverage/
+
+# IDE / Editor Files
 .idea/
 .vscode/
 *.swp
@@ -35,10 +49,16 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Build artifacts
+# Build Artifacts
 build/
 dist/
-*.pyc
-*.pyo
-*.pyd
-.Python
+
+# Packaging
+*.egg-info/
+pip-wheel-metadata/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Databases
+*.sqlite3
