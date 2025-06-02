@@ -4,9 +4,12 @@ import websocket  # websocket-client package
 from config import Config
 from modules.vision import VisionModule
 from modules.audio import AudioModule
+from modules.leds import LedsModule
 from .state import RobotState
 from .speech import SpeechController
 from .conversation import ConversationController
+
+robot_instance = None
 
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
@@ -14,8 +17,6 @@ class RobotController:
         self._lock = threading.Lock()
         self.debug = debug
         self._state = RobotState.STANDBY
-        self._terminal_input_thread = None
-        self._stop_terminal_input = threading.Event()
 
         # Load config
         self.config = Config()
@@ -26,6 +27,10 @@ class RobotController:
         self.conversation = ConversationController(debug=debug)
         self.leds = LedsModule(debug=debug)
         self.vision = VisionModule(debug=debug)
+
+        # Register global instance for API access
+        global robot_instance
+        robot_instance = self
 
         # Start WebSocket thread for backend updates (only if API enabled)
         self._ws_url = "ws://localhost:8000/ws"
@@ -59,21 +64,15 @@ class RobotController:
     def start(self):
         if self.debug:
             print("Starting robot...")
-        self._stop_terminal_input = threading.Event()
-        self._terminal_input_thread = threading.Thread(target=self._handle_terminal_input)
-        self._terminal_input_thread.daemon = True
-        self._terminal_input_thread.start()
-        if self.speech:
-            self.speech.prepare_for_listening()
         # Enter standby mode and begin wake word detection
-        self._return_to_standby()
+        # self._return_to_standby()
+        # Enter listening mode and begin speech recognition
+        self.speech.speech_to_text.start_listening()
+        self._set_state(RobotState.LISTENING)
 
     def stop(self):
         if self.debug:
             print("Stopping robot...")
-        self._stop_terminal_input.set()
-        if self._terminal_input_thread:
-            self._terminal_input_thread.join(timeout=2)
         self._cleanup()
 
     def _set_state(self, new_state: RobotState):
@@ -112,22 +111,6 @@ class RobotController:
             self.speech.wake_word.start_listening()
         # Set state last
         self._set_state(RobotState.STANDBY)
-
-    def _handle_terminal_input(self):
-        """Handle input from terminal"""
-        while not self._stop_terminal_input.is_set():
-            try:
-                # Read input from terminal
-                text = input()
-                # Only process if in listening state
-                if self._state == RobotState.LISTENING and text.strip():
-                    # Process text same way as speech input
-                    self.speech.on_transcription(text)
-            except EOFError:
-                break  # Exit if input stream is closed
-            except Exception as e:
-                if self.debug:
-                    print(f"Error handling terminal input: {e}")
 
     def _on_audio_level(self, audio_level: float):
         """Handle real-time audio level updates from the audio module."""

@@ -38,12 +38,6 @@ class SpeechController:
             self.voice.add_completion_callback(self.on_speech_complete)
             self._callbacks_registered = True
 
-    def prepare_for_listening(self):
-        """Prepare the speech system for listening (register callbacks, etc)."""
-        self._register_callbacks()
-        if self.debug:
-            print("SpeechController is ready for listening.")
-
     def on_wake_word(self):
         if self.debug:
             print(f"[SpeechController] Wake word detected (state: {self.parent._state})")
@@ -72,22 +66,19 @@ class SpeechController:
             print(f"\nRobbie: {response}")
             self.speech_to_text.stop_listening()
             self.parent._set_state(RobotState.SPEAKING)
+            print(f"[SpeechController] About to call self.voice.say with: {response}")
             self.voice.say(response, blocking=False)
         else:
             print("\nNo response from AI")
             self.parent._set_state(RobotState.LISTENING)
 
     def on_speech_complete(self):
+        # Always start listening after speech completes, and set state to LISTENING
         if self.debug:
-            print("Speech complete, returning to listening")
+            print("[on_speech_complete] Speech finished. Transitioning to LISTENING and starting speech-to-text.")
         self.parent._set_state(RobotState.LISTENING)
-        if hasattr(self.speech_to_text, 'is_listening') and self.speech_to_text.is_listening:
-            if self.debug:
-                print("Speech recognition already running, not restarting.")
-        else:
-            if self.debug:
-                print("Resuming speech recognition")
-            self.speech_to_text.start_listening()
+        self.speech_to_text.start_listening()
+        # Do NOT return to standby here. Standby should only be triggered by the silence timeout callback from SpeechToTextModule.
 
     def cleanup(self):
         self.wake_word.cleanup()

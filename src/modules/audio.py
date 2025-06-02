@@ -38,7 +38,7 @@ class AudioModule:
         self.default_rate = config.get('audio', 'rate', default=44100)
         self.default_chunk_size = config.get('audio', 'chunk_size', default=1024)
         self.default_channels = config.get('audio', 'channels', default=1)
-        self.default_format = self.FORMAT_FLOAT32
+        self.default_format = self.FORMAT_INT16  # Use int16 for compatibility
         
         # Audio state
         self._pa = None
@@ -46,6 +46,23 @@ class AudioModule:
         
         # Initialize PyAudio
         self._initialize_pyaudio()
+
+        # Debug: List and show selected audio input device
+        if self.debug and self._pa:
+            print("\n[AudioModule] Listing available audio input devices:")
+            for i in range(self._pa.get_device_count()):
+                try:
+                    dev_info = self._pa.get_device_info_by_index(i)
+                    if dev_info.get('maxInputChannels', 0) > 0:
+                        print(f"  [{i}] {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
+                except Exception as e:
+                    print(f"  Error getting device {i} info: {e}")
+            try:
+                device_info = self._pa.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pa.get_default_input_device_info()
+                print(f"\n[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
+                print(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
+            except Exception as e:
+                print(f"[AudioModule] Error getting selected device info: {e}")
 
     def add_audio_level_callback(self, callback: Callable[[float], None]) -> None:
         """Register a callback for real-time audio level (dB)."""
@@ -129,7 +146,7 @@ class AudioModule:
         # Use defaults if not specified
         rate = rate or self.default_rate
         channels = channels or self.default_channels
-        format = format or self.default_format
+        format = format or self.default_format  # Should be FORMAT_INT16 for input
         chunk_size = chunk_size or self.default_chunk_size
         
         # Create stream
@@ -141,7 +158,7 @@ class AudioModule:
                                output=output,
                                frames_per_buffer=chunk_size,
                                stream_callback=callback)
-        
+        print(f"[AudioModule] Created stream with rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
         # Store stream
         self._streams[stream_id] = {"stream": stream, "callback": callback}
         

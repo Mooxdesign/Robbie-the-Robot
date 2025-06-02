@@ -89,6 +89,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif cmd_type == "ping":
                     # Ignore keepalive pings
                     continue
+                elif cmd_type == "chat":
+                    # Handle typed chat from web interface
+                    chat_text = command.get("text", "")
+                    # Import robot controller instance
+                    from controller.robot import robot_instance
+                    response = None
+                    if hasattr(robot_instance, "speech"):
+                        # Simulate transcription callback
+                        response = robot_instance.speech.on_transcription(chat_text)
+                    # Always set last_transcription to the user prompt
+                    robot_state["last_transcription"] = chat_text
+                    # Always set last_response to the AI response (or empty string if none)
+                    robot_state["last_response"] = response if response else ""
                 else:
                     logging.info(f"Unknown WebSocket command type: {cmd_type}")
                     continue

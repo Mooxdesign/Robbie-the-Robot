@@ -9,10 +9,11 @@ class VoiceModule(threading.Thread):
     """Text-to-speech module using pyttsx3 with proper event handling"""
     
     def __init__(self, 
-                 rate: int = 190,
+                 rate: int = 130,
                  volume: float = 1.0,
                  voice_id: Optional[str] = None,
                  debug: bool = True):
+        super().__init__()
         """
         Initialize text-to-speech module
         
@@ -22,7 +23,6 @@ class VoiceModule(threading.Thread):
             voice_id: Specific voice ID to use, None for default
             debug: Enable debug output
         """
-        super().__init__()
         self.debug = debug
         self.rate = rate
         self.volume = volume
@@ -41,7 +41,7 @@ class VoiceModule(threading.Thread):
         
         # Start thread
         self._is_alive.set()
-        self.engine = self._init_engine()  # Eagerly initialize engine for test reliability
+        self.engine = None  # Engine will be initialized in run()
         self.start()
 
     def set_rate(self, rate: int) -> bool:
@@ -81,23 +81,31 @@ class VoiceModule(threading.Thread):
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
             
-            # Set George's voice by default
-            george_voice = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\MSTTS_V110_enGB_GeorgeM"
-            try:
-                engine.setProperty('voice', george_voice)
-                self.voice_id = george_voice
+            # Always use a known working voice if available
+            preferred_names = [
+                "Microsoft David Desktop - English (United States)",
+                "Microsoft Zira Desktop - English (United States)"
+            ]
+            voices = engine.getProperty('voices')
+            selected_voice = None
+            for v in voices:
+                if v.name in preferred_names:
+                    selected_voice = v
+                    break
+            if selected_voice:
+                engine.setProperty('voice', selected_voice.id)
+                self.voice_id = selected_voice.id
                 if self.debug:
-                    print(f"Set default voice to George: {george_voice}")
-            except Exception as e:
-                if self.debug:
-                    print(f"Failed to set George's voice: {e}")
-                # Fallback to first available voice
-                voices = engine.getProperty('voices')
+                    print(f"Set default voice to: {selected_voice.name}")
+            else:
                 if voices:
                     self.voice_id = voices[0].id
                     engine.setProperty('voice', self.voice_id)
                     if self.debug:
-                        print("Using fallback voice")
+                        print(f"No preferred voice found. Using fallback: {voices[0].name}")
+                else:
+                    if self.debug:
+                        print("No voices available for TTS.")
             # Connect event handlers
             engine.connect('finished-utterance', self._on_completed)
             engine.connect('started-word', self._on_cancel)
@@ -129,6 +137,8 @@ class VoiceModule(threading.Thread):
         return None
 
     def say(self, text: Union[str, List[str]], blocking: bool = False) -> bool:
+        print(f"[VoiceModule] say() called with: {text} (blocking={blocking})")
+        print(f"[VoiceModule] State: is_alive={self._is_alive.is_set()}, engine={self.engine}")
         """
         Speak text using text-to-speech
         
@@ -140,8 +150,7 @@ class VoiceModule(threading.Thread):
             bool: True if successful
         """
         if not self.engine:
-            if self.debug:
-                print("TTS engine not initialized")
+            print("TTS engine not initialized")
             return False
         if not self._is_alive.is_set():
             if self.debug:
@@ -152,19 +161,19 @@ class VoiceModule(threading.Thread):
             # Clear any pending cancellation
             self._cancel.clear()
             
-            # Convert single string to list
+            # Accept both string and list
             if isinstance(text, str):
                 text = [(text, blocking)]
-            elif isinstance(text, (list, tuple)):
+            elif isinstance(text, list):
                 text = [(t, blocking) if isinstance(t, str) else t for t in text]
-                
+            
             # Queue all text items
             with self._text_lock:
                 for t in text:
                     self._text.append(t)
                     if self.debug:
-                        print(f"Queued speech: {t[0]}")
-                        
+                        print(f"[VoiceModule] Queued speech: '{t[0]}' (blocking={t[1]})")
+            
             # Signal speech thread
             self._say.set()
             
@@ -172,12 +181,11 @@ class VoiceModule(threading.Thread):
             if blocking:
                 while len(self._text) > 0:
                     time.sleep(0.1)
-                    
+                
             return True
             
         except Exception as e:
-            if self.debug:
-                print(f"Error queueing speech: {e}")
+            print(f"[VoiceModule] Exception in say(): {e}")
             return False
             
     def cancel(self):
@@ -194,14 +202,12 @@ class VoiceModule(threading.Thread):
         if self.engine:
             self.engine.stop()
             time.sleep(0.5)
-            self.engine.endLoop()
             
     def _on_completed(self, name, completed):
         """Handle speech completion"""
         if completed:
             if self.debug:
                 print(f"Speech completed: {name}")
-            self.engine.endLoop()
             self._notify_completion()
             
     def _notify_completion(self):
@@ -261,6 +267,7 @@ class VoiceModule(threading.Thread):
                 print(f"Error getting voices: {e}")
             return {}
             
+
     def change_voice(self, voice_id: Optional[str] = None, gender: Optional[str] = None) -> bool:
         """
         Change the voice used for speech.
@@ -326,8 +333,16 @@ class VoiceModule(threading.Thread):
                         if self.debug:
                             print("TTS engine unavailable during speech. Skipping.")
                         continue
-                    self.engine.say(text)
-                    self.engine.startLoop()
+                    if self.debug:
+                        print(f"[VoiceModule] Speaking: '{text}'")
+                    try:
+                        self.engine.say(text)
+                        self.engine.runAndWait()
+                        if self.debug:
+                            print(f"[VoiceModule] Finished speaking: '{text}'")
+                    except Exception as e:
+                        if self.debug:
+                            print(f"[VoiceModule] Error during speech: {e}")
         # Cleanup
         if self.engine:
             try:
