@@ -41,15 +41,7 @@ class SpeechController:
     def on_wake_word(self):
         if self.debug:
             print(f"[SpeechController] Wake word detected (state: {self.parent._state})")
-        if self.parent._state != RobotState.STANDBY:
-            if self.debug:
-                print(f"Ignoring wake word in {self.parent._state} state")
-            return
-        self.wake_word.stop_listening()
-        if self.debug:
-            print("Starting speech recognition")
-        self.speech_to_text.start_listening()
-        self.parent._set_state(RobotState.LISTENING)
+        self.parent.wake_up()
 
     def on_transcription(self, text):
         if not text:

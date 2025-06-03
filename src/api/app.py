@@ -102,6 +102,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     robot_state["last_transcription"] = chat_text
                     # Always set last_response to the AI response (or empty string if none)
                     robot_state["last_response"] = response if response else ""
+                elif cmd_type == "wake":
+                    from controller.robot import robot_instance
+                    if robot_instance:
+                        robot_instance.wake_up()
                 else:
                     logging.info(f"Unknown WebSocket command type: {cmd_type}")
                     continue

@@ -299,11 +299,11 @@ class SpeechToTextModule:
                     self._last_audio = time.time()
                     self._buffering_active = False
             # Standby/idle timeout logic (optional):
-            # if elapsed > self._silence_timeout:
-            #     print(f"[SpeechToTextModule] Standby timeout reached after {elapsed:.2f}s, stopping listening.")
-            #     if self.is_listening:
-            #         self.stop_listening()
-            #     return (None, 0)
+            if elapsed > self._silence_timeout:
+                print(f"[SpeechToTextModule] Standby timeout reached after {elapsed:.2f}s, stopping listening.")
+                if self.is_listening:
+                    self.stop_listening()
+                return (None, 0)
 
         except Exception as e:
             print(f"[SpeechToTextModule] Error processing audio: {e}")

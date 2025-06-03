@@ -14,13 +14,11 @@ robot_instance = None
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
     def __init__(self, debug: bool = False, api_enabled: bool = False):
+        # Load config
+        self.config = Config()
         self._lock = threading.Lock()
         self.debug = debug
         self._state = RobotState.STANDBY
-
-        # Load config
-        self.config = Config()
-
         # Initialize modules
         self.audio = AudioModule(debug=debug)
         self.speech = SpeechController(self, self.audio, debug=debug)
@@ -65,10 +63,7 @@ class RobotController:
         if self.debug:
             print("Starting robot...")
         # Enter standby mode and begin wake word detection
-        # self._return_to_standby()
-        # Enter listening mode and begin speech recognition
-        self.speech.speech_to_text.start_listening()
-        self._set_state(RobotState.LISTENING)
+        self._return_to_standby()
 
     def stop(self):
         if self.debug:
@@ -111,6 +106,21 @@ class RobotController:
             self.speech.wake_word.start_listening()
         # Set state last
         self._set_state(RobotState.STANDBY)
+
+    def wake_up(self):
+        """Wake up the robot from STANDBY, as if the wake word was detected or UI button pressed."""
+        if self._state != RobotState.STANDBY:
+            if self.debug:
+                print(f"[wake_up] Ignored: not in STANDBY (current state: {self._state})")
+            return
+        if self.debug:
+            print("[wake_up] Triggered: transitioning to LISTENING and starting speech recognition.")
+        if self.speech:
+            # Stop wake word detection
+            self.speech.wake_word.stop_listening()
+            # Start speech recognition
+            self.speech.speech_to_text.start_listening()
+        self._set_state(RobotState.LISTENING)
 
     def _on_audio_level(self, audio_level: float):
         """Handle real-time audio level updates from the audio module."""
