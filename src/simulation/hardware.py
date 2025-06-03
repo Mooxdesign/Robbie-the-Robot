@@ -19,15 +19,7 @@ class SimulatedDCMotor:
         self.channel = channel
         self._throttle = 0.0
         self._last_throttle = 0.0
-        self._visualizer = get_visualizer()
-        
-    def _update_visualizer(self):
-        """Update visualizer with current motor state"""
-        if self.channel == 0:  # Left motor
-            self._visualizer.set_motor_speeds(self._throttle, None)
-        else:  # Right motor
-            self._visualizer.set_motor_speeds(None, self._throttle)
-    
+            
     @property
     def throttle(self) -> float:
         return self._throttle
@@ -39,7 +31,6 @@ class SimulatedDCMotor:
             if VERBOSE:
                 print(f"[SIM] DC Motor throttle set to {self._throttle:.2f}")
             self._last_throttle = self._throttle
-            self._update_visualizer()
 
 class SimulatedServo:
     """Simulated servo for testing"""
@@ -50,19 +41,7 @@ class SimulatedServo:
         self._last_angle = None
         self._min_pulse = 500
         self._max_pulse = 2500
-        self._visualizer = get_visualizer()
-        
-    def _update_visualizer(self):
-        """Update visualizer with current servo state"""
-        if self.channel == 0:  # Head pan
-            self._visualizer.set_head_position(self._angle, None)
-        elif self.channel == 1:  # Head tilt
-            self._visualizer.set_head_position(None, self._angle)
-        elif self.channel == 2:  # Left arm
-            self._visualizer.set_arm_position("left", self._angle / 180.0)
-        elif self.channel == 3:  # Right arm
-            self._visualizer.set_arm_position("right", self._angle / 180.0)
-    
+
     def set_pulse_width_range(self, min_pulse: int, max_pulse: int):
         """Set pulse width range"""
         self._min_pulse = min_pulse
@@ -79,7 +58,6 @@ class SimulatedServo:
             if VERBOSE:
                 print(f"[SIM] Servo angle set to {self._angle:.1f}")
             self._last_angle = self._angle
-            self._update_visualizer()
 
 class SimulatedMotorKit:
     """Simulated motor kit for testing"""
@@ -104,8 +82,10 @@ class SimulatedUnicornHATMini:
         self.width = 8   # 8 LEDs wide
         self.height = 4  # 4 LEDs high
         self.brightness = 0.5
-        self._visualizer = get_visualizer()
-        
+        # Internal buffer for LED state
+        import numpy as np
+        self._buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+    
     def set_pixel(self, x: int, y: int, r: int, g: int, b: int):
         """
         Set pixel color
@@ -120,29 +100,26 @@ class SimulatedUnicornHATMini:
         # Validate coordinates
         if not (0 <= x < self.width and 0 <= y < self.height):
             return
-            
         # Scale by brightness
         r = int(r * self.brightness)
         g = int(g * self.brightness)
         b = int(b * self.brightness)
-        
-        # Update visualizer
-        self._visualizer.set_led(x, y, r, g, b)
-        
+        self._buffer[y, x] = [r, g, b]
+    
     def set_all(self, r: int, g: int, b: int):
         """Set all pixels to color"""
         for y in range(self.height):
             for x in range(self.width):
                 self.set_pixel(x, y, r, g, b)
-                
+    
     def clear(self):
         """Clear all pixels"""
-        self._visualizer.clear_leds()
-        
+        self._buffer.fill(0)
+    
     def show(self):
         """Update display - not needed in simulation"""
         pass
-        
+    
     def set_brightness(self, brightness: float):
         """Set LED brightness"""
         self.brightness = max(0.0, min(1.0, brightness))
@@ -197,9 +174,6 @@ class SimulatedCamera:
                     py = y + j
                     if 0 <= px < 640 and 0 <= py < 480:
                         self._frame[py, px] = [255, 128, 0]  # Orange dot
-        
-        # Update visualizer
-        self._visualizer.set_camera_frame(self._frame)
-        
+                
         # Save to output
         output.save('dummy.jpg')  # Dummy save for simulation
