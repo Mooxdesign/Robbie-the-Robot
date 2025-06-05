@@ -55,12 +55,21 @@ class TestVoiceModule(unittest.TestCase):
         self.mock_engine.getProperty.side_effect = get_property_side_effect
 
         self.voice = VoiceModule(debug=True)
+        self.wait_for_engine()
         
     def tearDown(self):
         """Clean up after tests"""
         if self.voice:
             self.voice.cleanup()
             
+    def wait_for_engine(self, timeout=2.0):
+        """Wait for the VoiceModule thread to initialize the engine."""
+        start = time.time()
+        while self.voice.engine is None and (time.time() - start) < timeout:
+            time.sleep(0.01)
+        if self.voice.engine is None:
+            raise RuntimeError("Voice engine did not initialize in time")
+
     def test_initialization(self):
         """Test module initialization"""
         self.assertIsNotNone(self.voice.engine)
@@ -142,9 +151,11 @@ class TestVoiceModule(unittest.TestCase):
             mock_init.side_effect = Exception("Mock init error")
             voice = VoiceModule(debug=True)
             self.assertIsNone(voice.engine)
-            
+        
         # Test speech with failed engine
         voice = VoiceModule(debug=True)
+        self.wait_for_engine()
+        voice.cleanup()  # Stop the thread so no background processing
         voice.engine = None
         result = voice.say("This should fail gracefully")
         self.assertFalse(result)
