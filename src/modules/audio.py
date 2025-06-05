@@ -41,24 +41,24 @@ class AudioModule:
         self.default_format = self.FORMAT_INT16  # Use int16 for compatibility
         
         # Audio state
-        self._pa = None
+        self._pyaudio = None
         self._streams: Dict[str, Dict] = {}  # Store active streams by ID
         
         # Initialize PyAudio
         self._initialize_pyaudio()
 
         # Debug: List and show selected audio input device
-        if self.debug and self._pa:
+        if self.debug and self._pyaudio:
             print("\n[AudioModule] Listing available audio input devices:")
-            for i in range(self._pa.get_device_count()):
+            for i in range(self._pyaudio.get_device_count()):
                 try:
-                    dev_info = self._pa.get_device_info_by_index(i)
+                    dev_info = self._pyaudio.get_device_info_by_index(i)
                     if dev_info.get('maxInputChannels', 0) > 0:
                         print(f"  [{i}] {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
                 except Exception as e:
                     print(f"  Error getting device {i} info: {e}")
             try:
-                device_info = self._pa.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pa.get_default_input_device_info()
+                device_info = self._pyaudio.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pyaudio.get_default_input_device_info()
                 print(f"\n[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
                 print(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
@@ -79,7 +79,7 @@ class AudioModule:
         
     def _initialize_pyaudio(self):
         try:
-            self._pa = pyaudio.PyAudio()
+            self._pyaudio = pyaudio.PyAudio()
             if self.debug:
                 print("PyAudio initialized successfully")
         except Exception as e:
@@ -87,13 +87,13 @@ class AudioModule:
             
     def list_devices(self):
         """List available audio devices"""
-        if not self._pa:
+        if not self._pyaudio:
             return
             
         print("\nAvailable audio devices:")
-        for i in range(self._pa.get_device_count()):
+        for i in range(self._pyaudio.get_device_count()):
             try:
-                dev_info = self._pa.get_device_info_by_index(i)
+                dev_info = self._pyaudio.get_device_info_by_index(i)
                 print(f"{i}: {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
             except Exception as e:
                 print(f"Error getting device {i} info: {e}")
@@ -101,11 +101,11 @@ class AudioModule:
         
     def get_device_info(self):
         """Get info about current audio device"""
-        if not self._pa:
+        if not self._pyaudio:
             return None
             
         try:
-            device_info = self._pa.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pa.get_default_input_device_info()
+            device_info = self._pyaudio.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pyaudio.get_default_input_device_info()
             print(f"\nUsing audio input device:")
             print(f"  Name: {device_info['name']}")
             print(f"  Index: {device_info['index']}")
@@ -140,7 +140,7 @@ class AudioModule:
         Returns:
             Stream ID string
         """
-        if not self._pa:
+        if not self._pyaudio:
             raise RuntimeError("Audio system not initialized")
             
         # Use defaults if not specified
@@ -151,7 +151,7 @@ class AudioModule:
         
         # Create stream
         stream_id = f"{rate}_{channels}_{format}_{chunk_size}_{input}_{output}"
-        stream = self._pa.open(format=format,
+        stream = self._pyaudio.open(format=format,
                                channels=channels,
                                rate=rate,
                                input=input,
@@ -238,8 +238,8 @@ class AudioModule:
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"File not found: {filename}")
         with wave.open(filename, 'rb') as wf:
-            stream = self._pa.open(
-                format=self._pa.get_format_from_width(wf.getsampwidth()),
+            stream = self._pyaudio.open(
+                format=self._pyaudio.get_format_from_width(wf.getsampwidth()),
                 channels=wf.getnchannels(),
                 rate=wf.getframerate(),
                 output=True
@@ -254,7 +254,7 @@ class AudioModule:
         """Record audio for a given duration (seconds)."""
         if duration <= 0:
             raise ValueError("Duration must be positive")
-        stream = self._pa.open(
+        stream = self._pyaudio.open(
             format=self.FORMAT_INT16,
             channels=1,
             rate=self.default_rate,
@@ -285,10 +285,10 @@ class AudioModule:
                 if self.debug:
                     print(f"Error closing stream {stream_id}: {e}")
             del self._streams[stream_id]
-        if self._pa:
+        if self._pyaudio:
             try:
-                self._pa.terminate()
+                self._pyaudio.terminate()
                 print("PyAudio terminated")
             except Exception as e:
                 print(f"Error terminating PyAudio: {e}")
-            self._pa = None
+            self._pyaudio = None

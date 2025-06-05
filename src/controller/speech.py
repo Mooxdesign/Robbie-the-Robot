@@ -34,7 +34,7 @@ class SpeechController:
             self.wake_word.add_detection_callback(self.on_wake_word)
             self.speech_to_text.add_transcription_callback(self.on_transcription)
             self.speech_to_text.add_audio_level_callback(self.parent._on_audio_level)
-            self.speech_to_text.add_timeout_callback(self.on_speech_complete)
+            self.speech_to_text.add_timeout_callback(self.on_silence_timeout)
             self.voice.add_completion_callback(self.on_speech_complete)
             self._callbacks_registered = True
 
@@ -71,6 +71,12 @@ class SpeechController:
         self.parent._set_state(RobotState.LISTENING)
         self.speech_to_text.start_listening()
         # Do NOT return to standby here. Standby should only be triggered by the silence timeout callback from SpeechToTextModule.
+
+    def on_silence_timeout(self):
+        # Called when silence timeout is triggered in SpeechToTextModule
+        if self.debug:
+            print("[on_silence_timeout] Silence timeout occurred. Returning to STANDBY.")
+        self.parent._return_to_standby()
 
     def cleanup(self):
         self.wake_word.cleanup()

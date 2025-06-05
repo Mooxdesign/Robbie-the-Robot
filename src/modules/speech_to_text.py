@@ -78,7 +78,7 @@ class SpeechToTextModule:
         self._process_thread = None
         self._transcription_callbacks: List[Callable[[str], None]] = []
         self._timeout_callbacks: List[Callable[[], None]] = []
-        self._silence_timeout = 10.0  # Seconds of silence before full standby/idle timeout
+        self._silence_timeout = 20.0  # Seconds of silence before full standby/idle timeout
         self._phrase_timeout = 0.8    # Seconds of silence to trigger phrase segmentation (endpointing)
         self._audio_threshold = -60  # dB threshold for speech detection (temporarily lowered for debug)
         self._buffering_active = False  # Only buffer after speech is detected
@@ -274,7 +274,7 @@ class SpeechToTextModule:
                             self._last_audio = time.time()
                         # Print buffer duration for diagnostics
                         duration_sec = len(self._audio_buffer) * self.CHUNK_SIZE / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
-                        print(f"[SpeechToTextModule] Buffered audio, buffer size: {len(self._audio_buffer)}, duration: {duration_sec:.2f}s, dB: {db:.1f}")
+                        # print(f"[SpeechToTextModule] Buffered audio, buffer size: {len(self._audio_buffer)}, duration: {duration_sec:.2f}s, dB: {db:.1f}")
             # Silence endpointing logic: process phrase if silence detected
             elapsed = time.time() - self._last_audio
             # Phrase endpointing: process phrase after short silence

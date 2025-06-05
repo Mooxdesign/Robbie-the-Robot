@@ -73,7 +73,7 @@ class VoiceModule(threading.Thread):
             if self.engine:
                 self.engine.setProperty('voice', voice_id)
             return True
-        
+
     def _init_engine(self) -> Optional[pyttsx3.Engine]:
         """Initialize pyttsx3 engine with properties"""
         try:
@@ -90,22 +90,17 @@ class VoiceModule(threading.Thread):
             selected_voice = None
             for v in voices:
                 if v.name in preferred_names:
-                    selected_voice = v
+                    selected_voice = v.id
                     break
             if selected_voice:
-                engine.setProperty('voice', selected_voice.id)
-                self.voice_id = selected_voice.id
+                engine.setProperty('voice', selected_voice)
+            elif voices:
+                engine.setProperty('voice', voices[0].id)
                 if self.debug:
-                    print(f"Set default voice to: {selected_voice.name}")
+                    print(f"No preferred voice found. Using fallback: {voices[0].name}")
             else:
-                if voices:
-                    self.voice_id = voices[0].id
-                    engine.setProperty('voice', self.voice_id)
-                    if self.debug:
-                        print(f"No preferred voice found. Using fallback: {voices[0].name}")
-                else:
-                    if self.debug:
-                        print("No voices available for TTS.")
+                if self.debug:
+                    print("No voices available for TTS.")
             # Connect event handlers
             engine.connect('finished-utterance', self._on_completed)
             engine.connect('started-word', self._on_cancel)
@@ -137,8 +132,6 @@ class VoiceModule(threading.Thread):
         return None
 
     def say(self, text: Union[str, List[str]], blocking: bool = False) -> bool:
-        print(f"[VoiceModule] say() called with: {text} (blocking={blocking})")
-        print(f"[VoiceModule] State: is_alive={self._is_alive.is_set()}, engine={self.engine}")
         """
         Speak text using text-to-speech
         
@@ -149,6 +142,11 @@ class VoiceModule(threading.Thread):
         Returns:
             bool: True if successful
         """
+
+        print(f"[VoiceModule] say() called with: {text} (blocking={blocking})")
+        print(f"[VoiceModule] State: is_alive={self._is_alive.is_set()}, engine={self.engine}")
+
+        # Check if engine is initialized and thread is alive
         if not self.engine:
             print("TTS engine not initialized")
             return False
