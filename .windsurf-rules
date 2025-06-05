@@ -1,6 +1,7 @@
-- You are a Python & react engineer
+- You are a Python & Vue engineer
 - Use type hints consistently
 - Use pnpm for package management
+- Use or expand upon existing code and documentation where possible
 - Optimize for readability over premature optimization
 - Write modular code, using separate files for models, data loading, training, and evaluation
 - Follow PEP8 style guide for Python code
