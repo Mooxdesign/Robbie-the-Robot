@@ -52,8 +52,22 @@ robot_state = {
         "right": 0
     },
     "audio_level": 0.0,  # Real-time audio input level (dB or normalized)
-    "last_transcription": ""  # Latest Whisper AI transcription
+    "last_transcription": "",  # Latest Whisper AI transcription
+    "led_matrix": []  # 8x4 RGB LED matrix state (list of lists)
 }
+
+# --- LED Matrix State Integration ---
+import numpy as np
+
+def update_led_matrix_state(leds_module):
+    """
+    Update robot_state['led_matrix'] with the current LED buffer as a nested list.
+    Should be called after each LED buffer update.
+    """
+    with leds_module._lock:
+        # Convert the numpy buffer (4,8,3) to a nested list for JSON serialization
+        robot_state['led_matrix'] = leds_module.buffer.astype(int).tolist()
+        print(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']}")
 
 @app.get("/api/status")
 async def get_status():
@@ -102,6 +116,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     robot_state["last_transcription"] = chat_text
                     # Always set last_response to the AI response (or empty string if none)
                     robot_state["last_response"] = response if response else ""
+                elif cmd_type == "test_led":
+                    from controller.robot import robot_instance
+                    if robot_instance and hasattr(robot_instance, "leds"):
+                        leds = robot_instance.leds
+                        # Fill the entire buffer with magenta
+                        leds.buffer[:, :] = [255, 0, 255]
+                        print("[DEBUG] test_led: buffer shape:", leds.buffer.shape)
+                        leds.show()
                 elif cmd_type == "wake":
                     from controller.robot import robot_instance
                     if robot_instance:
