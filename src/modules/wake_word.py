@@ -141,14 +141,6 @@ class WakeWordModule:
         try:
             # Convert raw bytes to numpy array
             audio_data = np.frombuffer(in_data, dtype=np.int16)
-            
-            # Calculate audio level in dB
-            if len(audio_data) > 0:
-                rms = np.sqrt(np.mean(audio_data.astype(float)**2))
-                db = 20 * np.log10(rms) if rms > 0 else -100
-                if self.debug:
-                    print(f"\rAudio Level: {db:.1f} dB", end="")
-            
             # Process with Porcupine
             result = self.porcupine.process(audio_data)
             

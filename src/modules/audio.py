@@ -149,6 +149,18 @@ class AudioModule:
         format = format or self.default_format  # Should be FORMAT_INT16 for input
         chunk_size = chunk_size or self.default_chunk_size
         
+        def audio_callback(audio_data, frame_count, time_info, status):
+            callback(audio_data, frame_count, time_info, status)
+            # Convert bytes to numpy array (assuming 16-bit audio)
+            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+            # Calculate audio level in dB
+            if len(audio_np) > 0:
+                rms = np.sqrt(np.mean(audio_np ** 2))
+                db = 20 * np.log10(rms + 1e-10)  # add epsilon to avoid log(0)
+                # if self.debug:
+                    # print(f"\rAudio ddevel: {db:.1f} dB", end="")
+            return (None, pyaudio.paContinue)
+        
         # Create stream
         stream_id = f"{rate}_{channels}_{format}_{chunk_size}_{input}_{output}"
         stream = self._pyaudio.open(format=format,
@@ -157,7 +169,7 @@ class AudioModule:
                                input=input,
                                output=output,
                                frames_per_buffer=chunk_size,
-                               stream_callback=callback)
+                               stream_callback=audio_callback)
         print(f"[AudioModule] Created stream with rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
         # Store stream
         self._streams[stream_id] = {"stream": stream, "callback": callback}

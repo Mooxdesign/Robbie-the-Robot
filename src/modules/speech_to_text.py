@@ -240,13 +240,17 @@ class SpeechToTextModule:
             if self.debug:
                 now = time.time()
                 if not hasattr(self, '_last_debug_samples_log') or now - self._last_debug_samples_log > 2:
-                    # print(f"[DEBUG] First 10 samples (float32): {audio_data[:10]}")
+                    print(f"[DEBUG] First 10 samples (float32): {audio_data[:10]}")
                     self._last_debug_samples_log = now
             # print(f"[SpeechToTextModule] Received {len(audio_data)} samples in audio callback")
             # Calculate audio level in dB
             if len(audio_data) > 0:
                 rms = np.sqrt(np.mean(audio_data**2))
                 db = 20 * np.log10(rms) if rms > 0 else -100
+                msg = (f"[DEBUG] rms={rms:.5f}, max={np.max(np.abs(audio_data)):.5f}, db={db:.1f}")
+                print(msg.ljust(100), end='\r', flush=True)
+                # print(f"[DEBUG] rms={rms:.5f}, max={np.max(np.abs(audio_data)):.5f}, db={db:.1f}")
+
                 # print(f"\r[SpeechToTextModule] Audio dB: {db:.1f}, threshold: {self._audio_threshold}    ", end='', flush=True)
                 if hasattr(self, '_audio_level_callbacks'):
                     for callback in self._audio_level_callbacks:
@@ -274,7 +278,9 @@ class SpeechToTextModule:
                             self._last_audio = time.time()
                         # Print buffer duration for diagnostics
                         duration_sec = len(self._audio_buffer) * self.CHUNK_SIZE / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
-                        # print(f"[SpeechToTextModule] Buffered audio, buffer size: {len(self._audio_buffer)}, duration: {duration_sec:.2f}s, dB: {db:.1f}")
+                        elapsed = time.time() - self._last_audio
+                        msg = f"[DEBUG] elapsed={elapsed:.2f}, phrase_timeout={self._phrase_timeout}, db={db:.1f}, buffering_active={self._buffering_active}"
+                        print(msg.ljust(100), end='\r', flush=True)
             # Silence endpointing logic: process phrase if silence detected
             elapsed = time.time() - self._last_audio
             # Phrase endpointing: process phrase after short silence
