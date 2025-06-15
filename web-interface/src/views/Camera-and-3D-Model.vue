@@ -1,27 +1,27 @@
 <template>
-  <div class="space-y-6">
-    <h2 class="text-2xl font-bold text-gray-900">Robot Visualization</h2>
+  <div class="visualization-root">
+    <h2 class="visualization-title">Robot Visualization</h2>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="visualization-grid">
       <!-- 3D Visualization -->
-      <div class="lg:col-span-2 bg-white shadow sm:rounded-lg">
-        <div class="px-4 py-5 sm:p-6">
-          <h3 class="text-lg leading-6 font-medium text-gray-900">3D View</h3>
-          <div class="mt-5">
-            <div ref="threeContainer" class="w-full h-96 bg-gray-100 rounded-lg"></div>
+      <div class="visualization-card visualization-3d">
+        <div class="visualization-card-inner">
+          <h3 class="visualization-section-title">3D View</h3>
+          <div class="visualization-section-space">
+            <div ref="threeContainer" class="visualization-3d-canvas"></div>
           </div>
         </div>
       </div>
 
       <!-- Controls and Info -->
-      <div class="space-y-6">
+      <div class="visualization-root">
         <!-- Camera Controls -->
         <div class="bg-white shadow sm:rounded-lg">
-          <div class="px-4 py-5 sm:p-6">
-            <h3 class="text-lg leading-6 font-medium text-gray-900">Camera Controls</h3>
-            <div class="mt-5 space-y-4">
+          <div class="visualization-card-inner">
+            <h3 class="visualization-section-title">Camera Controls</h3>
+            <div class="visualization-section-space space-y-4">
               <div>
-                <label for="cameraAngle" class="block text-sm font-medium text-gray-700">
+                <label for="cameraAngle" class="visualization-label">
                   Camera Angle
                 </label>
                 <input
@@ -30,12 +30,12 @@
                   v-model="cameraAngle"
                   min="0"
                   max="360"
-                  class="mt-1 w-full"
+                  class="visualization-range"
                   @input="updateCamera"
                 >
               </div>
               <div>
-                <label for="cameraHeight" class="block text-sm font-medium text-gray-700">
+                <label for="cameraHeight" class="visualization-label">
                   Camera Height
                 </label>
                 <input
@@ -45,7 +45,7 @@
                   min="1"
                   max="10"
                   step="0.1"
-                  class="mt-1 w-full"
+                  class="visualization-range"
                   @input="updateCamera"
                 >
               </div>
@@ -55,31 +55,31 @@
 
         <!-- Robot State -->
         <div class="bg-white shadow sm:rounded-lg">
-          <div class="px-4 py-5 sm:p-6">
-            <h3 class="text-lg leading-6 font-medium text-gray-900">Robot State</h3>
-            <div class="mt-5 space-y-4">
+          <div class="visualization-card-inner">
+            <h3 class="visualization-section-title">Robot State</h3>
+            <div class="visualization-section-space space-y-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700">Position</label>
-                <div class="mt-1 grid grid-cols-3 gap-4">
+                <label class="visualization-label">Position</label>
+                <div class="mt-1 visualization-pos-grid">
                   <div>
-                    <span class="text-xs text-gray-500">X:</span>
-                    <span class="ml-1">{{ position.x.toFixed(2) }}</span>
+                    <span class="visualization-label-muted">X:</span>
+                    <span class="visualization-label-value">{{ position.x.toFixed(2) }}</span>
                   </div>
                   <div>
-                    <span class="text-xs text-gray-500">Y:</span>
-                    <span class="ml-1">{{ position.y.toFixed(2) }}</span>
+                    <span class="visualization-label-muted">Y:</span>
+                    <span class="visualization-label-value">{{ position.y.toFixed(2) }}</span>
                   </div>
                   <div>
-                    <span class="text-xs text-gray-500">Z:</span>
-                    <span class="ml-1">{{ position.z.toFixed(2) }}</span>
+                    <span class="visualization-label-muted">Z:</span>
+                    <span class="visualization-label-value">{{ position.z.toFixed(2) }}</span>
                   </div>
                 </div>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700">Rotation</label>
+                <label class="visualization-label">Rotation</label>
                 <div class="mt-1">
-                  <span class="text-xs text-gray-500">Angle:</span>
-                  <span class="ml-1">{{ rotation.toFixed(2) }}°</span>
+                  <span class="visualization-label-muted">Angle:</span>
+                  <span class="visualization-label-value">{{ rotation.toFixed(2) }}°</span>
                 </div>
               </div>
             </div>
@@ -207,3 +207,89 @@ function onWindowResize() {
 
 // TODO: Implement real-time position and rotation updates from robot
 </script>
+
+<style scoped>
+.visualization-root {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+.visualization-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #222;
+  margin-bottom: 1.2rem;
+}
+.visualization-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+}
+.visualization-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0.5px 1.5px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+.visualization-3d {
+  grid-column: 1 / span 1;
+}
+.visualization-card-inner {
+  padding: 1.5rem;
+}
+.visualization-section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 1rem;
+}
+.visualization-section-space {
+  margin-top: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.visualization-3d-canvas {
+  width: 100%;
+  height: 24rem;
+  background: #f3f4f6;
+  border-radius: 10px;
+  min-height: 300px;
+}
+.visualization-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.visualization-label {
+  font-size: 1rem;
+  color: #555;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.visualization-range {
+  width: 100%;
+  margin-top: 0.2rem;
+}
+.visualization-label-muted {
+  font-size: 0.9rem;
+  color: #888;
+}
+.visualization-label-value {
+  margin-left: 0.4rem;
+  font-family: 'Fira Mono', 'Consolas', monospace;
+  font-size: 1rem;
+}
+.visualization-pos-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.1rem;
+  margin-top: 0.2rem;
+}
+@media (max-width: 900px) {
+  .visualization-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

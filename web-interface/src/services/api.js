@@ -5,19 +5,32 @@ const API_URL = 'http://localhost:8000/api';
 export const api = {
     // WebSocket connection
     ws: null,
+    reconnectDelay: 1000,
+    _audioLevelListeners: [],
+    _transcriptionListeners: [],
+    _stateListeners: [],
 
-    // WebSocket callbacks
-    onMessage: null,
-    onError: null,
-    onClose: null,
+    // Listener registration (Hybrid Approach)
+    registerAudioLevelListener(cb) {
+        this._audioLevelListeners.push(cb);
+    },
+    unregisterAudioLevelListener(cb) {
+        this._audioLevelListeners = this._audioLevelListeners.filter(fn => fn !== cb);
+    },
+    registerTranscriptionListener(cb) {
+        this._transcriptionListeners.push(cb);
+    },
+    unregisterTranscriptionListener(cb) {
+        this._transcriptionListeners = this._transcriptionListeners.filter(fn => fn !== cb);
+    },
+    registerStateListener(cb) {
+        this._stateListeners.push(cb);
+    },
+    unregisterStateListener(cb) {
+        this._stateListeners = this._stateListeners.filter(fn => fn !== cb);
+    },
 
-    // Real-time listeners
-    onAudioLevel: null,
-    onTranscription: null,
-    
-    reconnectDelay: 1000, // Start at 1s
-
-    // Initialize WebSocket connection
+    // WebSocket connection
     initWebSocket() {
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
             return;
@@ -25,7 +38,7 @@ export const api = {
         this.ws = new WebSocket('ws://localhost:8000/ws');
         this.ws.onopen = () => {
             console.log('[DEBUG] WebSocket connected');
-            this.reconnectDelay = 1000; // Reset delay on successful connect
+            this.reconnectDelay = 1000;
         };
         this.ws.onmessage = (event) => {
             let data;
@@ -35,34 +48,51 @@ export const api = {
                 console.error('[DEBUG] Failed to parse WebSocket message:', event.data, e);
                 return;
             }
-            if (this.onMessage) {
-                this.onMessage(data);
-            }
-            // Audio level update
+            // Hybrid event dispatch: specialized listeners for high-frequency, state for holistic
             if (typeof data.audio_level !== 'undefined') {
-                console.log('[DEBUG] Received audio_level:', data.audio_level);
-                if (this.onAudioLevel) {
-                    this.onAudioLevel(data.audio_level);
-                }
+                this._audioLevelListeners.forEach(cb => cb(data.audio_level));
             }
-            // Transcription update
-            if (typeof data.last_transcription !== 'undefined' && this.onTranscription) {
-                this.onTranscription(data.last_transcription);
+            if (typeof data.last_transcription !== 'undefined') {
+                this._transcriptionListeners.forEach(cb => cb(data.last_transcription));
             }
+            // Always dispatch to state listeners with the full state
+            this._stateListeners.forEach(cb => cb(data));
         };
         this.ws.onerror = (error) => {
             console.error('[DEBUG] WebSocket error:', error, this.ws.readyState);
-            if (this.onError) {
-                this.onError(error);
-            }
         };
         this.ws.onclose = (event) => {
             console.warn('[DEBUG] WebSocket closed:', event.code, event.reason, 'Reconnecting in', this.reconnectDelay, 'ms...');
             setTimeout(() => {
-                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000); // Max 30s
+                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
                 this.initWebSocket();
             }, this.reconnectDelay);
         };
+    },
+
+
+    // WebSocket callbacks
+    onMessage: null,
+    onError: null,
+    onClose: null,
+
+    // (Deprecated) Real-time single listeners (use registerXListener instead)
+    // onAudioLevel: null,
+    // onTranscription: null,
+    
+    // Send a chat message to the robot (typed chat)
+    sendChat(text) {
+        this.sendCommand({
+            type: 'chat',
+            text
+        });
+    },
+
+    // Listeners for robot state updates (already handled above; do not duplicate)
+    // _stateListeners: [],
+    // registerStateListener(cb) { ... },
+    _notifyStateListeners(state) {
+        this._stateListeners.forEach(cb => cb(state));
     },
     
     // Send command through WebSocket
@@ -122,15 +152,7 @@ export const api = {
             sensor: sensorName
         });
     }
-};
-
-// Register listeners for audio level and transcription
-api.registerAudioLevelListener = function(cb) {
-    this.onAudioLevel = cb;
-};
-api.registerTranscriptionListener = function(cb) {
-    this.onTranscription = cb;
-};
+}
 
 // Initialize WebSocket connection when the service is imported
 api.initWebSocket();

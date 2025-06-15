@@ -1,29 +1,30 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
-
-    <nav class="bg-white shadow-sm">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-          <div class="flex">
-            <div class="flex-shrink-0 flex items-center">
-              <h1 class="text-xl font-bold text-gray-900">Robbie the Robot</h1>
-            </div>
-
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="py-6">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <UnifiedDashboard />
-      </div>
-    </div>
+  <div class="app-root">
+    <Header />
+    <main class="main-content">
+      <router-view />
+    </main>
+    <Footer />
   </div>
 </template>
 
-
 <script setup lang="ts">
-import UnifiedDashboard from './views/UnifiedDashboard.vue'
+import Header from './components/Header.vue';
+import Footer from './components/Footer.vue';
 </script>
 
+<style>
+.app-root {
+  min-height: 100vh;
+  background: #f4f6fa;
+  display: flex;
+  flex-direction: column;
+}
+.main-content {
+  flex: 1;
+  padding: 2.5rem 0;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+</style>

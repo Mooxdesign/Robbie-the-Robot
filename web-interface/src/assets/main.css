@@ -1,28 +1,129 @@
-@tailwind base;
-@tailwind utilities;
 :root {
   --primary: #3b82f6;
   --secondary: #1f2937;
+  --card-bg: #fff;
+  --card-radius: 12px;
+  --card-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0.5px 1.5px rgba(0,0,0,0.05);
+  --header-bg: #f8fafc;
+  --border-color: #e5e7eb;
+  --text-main: #222;
+  --text-muted: #666;
 }
 
 body {
-  @apply bg-gray-50;
+  background: #f4f6fa;
+  color: var(--text-main);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
 }
 
-@tailwind components;
-
-.btn {
-  @apply inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500;
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
 }
-
-.btn-secondary {
-  @apply bg-gray-600 hover:bg-gray-700 focus:ring-gray-500;
-}
-
-.input {
-  @apply shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md;
+@media (min-width: 768px) {
+  .dashboard-header { flex-direction: row; align-items: center; justify-content: space-between; }
 }
 
 .card {
-  @apply bg-white shadow sm:rounded-lg px-4 py-5 sm:p-6;
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
 }
+
+.dashboard-section {
+  margin-bottom: 2.5rem;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 10px;
+  background: #bbb;
+}
+.status-indicator.connected { background: #22c55e; }
+.status-indicator.disconnected { background: #ef4444; }
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn:hover, .btn:focus {
+  background: #2563eb;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+  box-sizing: border-box;
+}
+.input:focus {
+  outline: 2px solid var(--primary);
+  border-color: var(--primary);
+}
+input[type="range"]::-webkit-slider-thumb {
+  background: #2563eb;
+}
+input[type="range"]::-moz-range-thumb {
+  background: #2563eb;
+}
+input[type="range"]::-ms-thumb {
+  background: #2563eb;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  color: var(--text-main);
+}
+
+.section-card-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 0.7rem;
+}
+
+.label-muted {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.mono {
+  font-family: 'Fira Mono', 'Consolas', monospace;
+}
+
+
+/* Add global styles here */
+
+.mono {
+  font-family: 'Fira Mono', 'Consolas', monospace;
+}
+.label-muted {
+  color: #888;
+  font-size: 0.97rem;
+}
+
+/* Add more as needed for dashboard visuals */
