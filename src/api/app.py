@@ -51,7 +51,8 @@ robot_state = {
         "left": 0,
         "right": 0
     },
-    "audio_level": 0.0,  # Real-time audio input level (dB or normalized)
+    "input_audio_level_db": 0.0,  # Real-time audio input level (dB or normalized)
+    "output_audio_level_db": 0.0,  # Real-time audio output level (dB or normalized)
     "last_transcription": "",  # Latest Whisper AI transcription
     "led_matrix": []  # 8x4 RGB LED matrix state (list of lists)
 }
@@ -96,7 +97,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     await handle_configuration(command)
                 elif cmd_type == "update_audio_level":
                     # Update audio level from robot controller/module
-                    robot_state["audio_level"] = command.get("audio_level", 0.0)
+                    if "input_audio_level_db" in command:
+                        robot_state["input_audio_level_db"] = command["input_audio_level_db"]
+                    if "output_audio_level_db" in command:
+                        robot_state["output_audio_level_db"] = command["output_audio_level_db"]
                 elif cmd_type == "update_transcription":
                     # Update transcription from robot controller/module
                     robot_state["last_transcription"] = command.get("last_transcription", "")

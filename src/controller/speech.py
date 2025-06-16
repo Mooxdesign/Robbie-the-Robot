@@ -33,7 +33,7 @@ class SpeechController:
         if not self._callbacks_registered:
             self.wake_word.add_detection_callback(self.on_wake_word)
             self.speech_to_text.add_transcription_callback(self.on_transcription)
-            self.speech_to_text.add_audio_level_callback(self.parent._on_audio_level)
+            self.speech_to_text.add_input_audio_level_callback(self.parent._on_input_audio_level)
             self.speech_to_text.add_timeout_callback(self.on_silence_timeout)
             self.voice.add_completion_callback(self.on_speech_complete)
             self._callbacks_registered = True

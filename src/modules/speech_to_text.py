@@ -11,12 +11,19 @@ from .audio import AudioModule
 
 class SpeechToTextModule:
     """Speech-to-text conversion using Whisper"""
-    def add_audio_level_callback(self, callback):
-        """Register a callback for real-time audio level (dB) via AudioModule."""
-        if hasattr(self, 'audio') and hasattr(self.audio, 'add_audio_level_callback'):
-            self.audio.add_audio_level_callback(callback)
+    def add_input_audio_level_callback(self, callback):
+        """Register a callback for real-time input audio level (dB) via AudioModule."""
+        if hasattr(self, 'audio') and hasattr(self.audio, 'add_input_audio_level_callback'):
+            self.audio.add_input_audio_level_callback(callback)
         else:
-            raise AttributeError("AudioModule is not initialized or does not support audio level callbacks.")
+            raise AttributeError("AudioModule is not initialized or does not support input audio level callbacks.")
+
+    def add_output_audio_level_callback(self, callback):
+        """Register a callback for real-time output audio level (dB) via AudioModule."""
+        if hasattr(self, 'audio') and hasattr(self.audio, 'add_output_audio_level_callback'):
+            self.audio.add_output_audio_level_callback(callback)
+        else:
+            raise AttributeError("AudioModule is not initialized or does not support output audio level callbacks.")
 
     """Speech-to-text conversion using Whisper"""
     
@@ -55,7 +62,7 @@ class SpeechToTextModule:
         self.audio = audio_module if audio_module else AudioModule(debug=debug)
         # Register audio level callback if needed
         if hasattr(self, 'on_audio_level') and callable(getattr(self, 'on_audio_level')):
-            self.audio.add_audio_level_callback(self.on_audio_level)
+            self.audio.add_input_audio_level_callback(self.on_audio_level)
         # Allow test to inject a mock whisper model
         if whisper_model is not None:
             self.whisper = whisper_model
@@ -79,8 +86,8 @@ class SpeechToTextModule:
         self._transcription_callbacks: List[Callable[[str], None]] = []
         self._timeout_callbacks: List[Callable[[], None]] = []
         self._silence_timeout = 20.0  # Seconds of silence before full standby/idle timeout
-        self._phrase_timeout = 0.8    # Seconds of silence to trigger phrase segmentation (endpointing)
-        self._audio_threshold = -60  # dB threshold for speech detection (temporarily lowered for debug)
+        self._phrase_timeout = 1    # Seconds of silence to trigger phrase segmentation (endpointing)
+        self._audio_threshold = -70  # dB threshold for speech detection (temporarily lowered for debug)
         self._buffering_active = False  # Only buffer after speech is detected
         # Pre-buffer: rolling buffer to capture audio before speech is detected
         from collections import deque
@@ -252,13 +259,9 @@ class SpeechToTextModule:
                 # print(f"[DEBUG] rms={rms:.5f}, max={np.max(np.abs(audio_data)):.5f}, db={db:.1f}")
 
                 # print(f"\r[SpeechToTextModule] Audio dB: {db:.1f}, threshold: {self._audio_threshold}    ", end='', flush=True)
-                if hasattr(self, '_audio_level_callbacks'):
-                    for callback in self._audio_level_callbacks:
-                        try:
-                            callback(db)
-                        except Exception as e:
-                            if self.debug:
-                                print(f"Error in audio level callback: {e}")
+                # Call input audio level callbacks registered via AudioModule
+                if hasattr(self, 'audio') and hasattr(self.audio, '_trigger_input_audio_level_callbacks'):
+                    self.audio._trigger_input_audio_level_callbacks(db)
                 # Wait for speech before buffering
                 with self._lock:
                     # Always pre-buffer audio
@@ -305,7 +308,7 @@ class SpeechToTextModule:
                     self._pre_buffer.clear()
                 else:
                     # Buffer is only silence, clear and reset
-                    print(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, but buffer is silent. Clearing buffer.")
+                    print(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, but buffer is silent. Clearing buffer. (max_amplitude={max_amplitude:.5f}, threshold={linear_threshold:.5f}, dB={self._audio_threshold})")
                     with self._lock:
                         self._audio_buffer = []
                     self._last_audio = time.time()

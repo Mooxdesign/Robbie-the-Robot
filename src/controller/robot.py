@@ -20,8 +20,11 @@ class RobotController:
         self.debug = debug
         self._state = RobotState.STANDBY
         # Initialize modules
-        self.audio = AudioModule(debug=debug)
+        # Use output_device_index=2 for Stereo Mix (update as needed for your system)
+        self.audio = AudioModule(output_device_index=2, debug=debug)
         self.speech = SpeechController(self, self.audio, debug=debug)
+        # Register output audio level callback for UI
+        self.audio.add_output_audio_level_callback(self._on_output_audio_level)
         self.conversation = ConversationController(debug=debug)
         self.leds = LedsModule(debug=debug)
         self.vision = VisionModule(debug=debug)
@@ -122,30 +125,55 @@ class RobotController:
             self.speech.speech_to_text.start_listening()
         self._set_state(RobotState.LISTENING)
 
-    def _on_audio_level(self, audio_level: float):
-        """Handle real-time audio level updates from the audio module."""
+    def _on_input_audio_level(self, input_audio_level_db: float):
+        """Handle real-time input audio level updates from the audio input module (in dB)."""
         import time
         now = time.time()
         # Throttle: only send if 100ms have passed or value changed by >1 dB
-        if not hasattr(self, '_last_audio_level_sent'):
-            self._last_audio_level_sent = None
-            self._last_audio_level_time = 0
+        if not hasattr(self, '_last_input_audio_level_sent'):
+            self._last_input_audio_level_sent = None
+            self._last_input_audio_level_time = 0
         send = False
         if (
-            self._last_audio_level_sent is None or
-            abs(audio_level - self._last_audio_level_sent) > 1 or
-            now - self._last_audio_level_time > 0.1
+            self._last_input_audio_level_sent is None or
+            abs(input_audio_level_db - self._last_input_audio_level_sent) > 1 or
+            now - self._last_input_audio_level_time > 0.1
         ):
             send = True
         if send:
-            self._last_audio_level_sent = audio_level
-            self._last_audio_level_time = now
+            self._last_input_audio_level_sent = input_audio_level_db
+            self._last_input_audio_level_time = now
             if self.debug:
-                print(f"[DEBUG] _on_audio_level sending dB: {audio_level}")
-            self._send_ws_command({"type": "update_audio_level", "audio_level": float(audio_level)})
+                print(f"[DEBUG] _on_input_audio_level sending input_audio_level_db: {input_audio_level_db}")
+            self._send_ws_command({"type": "update_audio_level", "input_audio_level_db": float(input_audio_level_db)})
         else:
             if self.debug:
-                print(f"[DEBUG] _on_audio_level throttled dB: {audio_level}")
+                print(f"[DEBUG] _on_input_audio_level throttled input_audio_level_db: {input_audio_level_db}")
+
+    def _on_output_audio_level(self, output_audio_level_db: float):
+        """Handle real-time output audio level updates from the output (loopback) device (in dB)."""
+        import time
+        now = time.time()
+        # Throttle: only send if 100ms have passed or value changed by >1 dB
+        if not hasattr(self, '_last_output_audio_level_sent'):
+            self._last_output_audio_level_sent = None
+            self._last_output_audio_level_time = 0
+        send = False
+        if (
+            self._last_output_audio_level_sent is None or
+            abs(output_audio_level_db - self._last_output_audio_level_sent) > 1 or
+            now - self._last_output_audio_level_time > 0.1
+        ):
+            send = True
+        if send:
+            self._last_output_audio_level_sent = output_audio_level_db
+            self._last_output_audio_level_time = now
+            # if self.debug:
+                # print(f"[DEBUG] _on_output_audio_level sending output_audio_level_db: {output_audio_level_db}")
+            self._send_ws_command({"type": "update_audio_level", "output_audio_level_db": float(output_audio_level_db)})
+        # else:
+        #     if self.debug:
+                # print(f"[DEBUG] _on_output_audio_level throttled output_audio_level_db: {output_audio_level_db}")
 
     def _cleanup(self):
         if self.leds:

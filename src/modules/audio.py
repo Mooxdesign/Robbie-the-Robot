@@ -20,17 +20,20 @@ class AudioModule:
     FORMAT_FLOAT32 = pyaudio.paFloat32
     FORMAT_INT16 = pyaudio.paInt16
     
-    def __init__(self, device_index: Optional[int] = None, debug: bool = False):
-        self._audio_level_callbacks: List[Callable[[float], None]] = []
+    def __init__(self, input_device_index: Optional[int] = None, output_device_index: Optional[int] = None, debug: bool = False):
+        self._input_audio_level_callbacks: List[Callable[[float], None]] = []
+        self._output_audio_level_callbacks: List[Callable[[float], None]] = []
         """
         Initialize audio module
         
         Args:
-            device_index: Index of audio input device to use
+            input_device_index: Index of audio input device to use
+            output_device_index: Index of output (loopback/Stereo Mix) device to monitor
             debug: Enable debug output
         """
         self.debug = debug
-        self.device_index = device_index
+        self.input_device_index = input_device_index
+        self.output_device_index = output_device_index
         self._lock = threading.Lock()
         
         # Load config
@@ -58,24 +61,67 @@ class AudioModule:
                 except Exception as e:
                     print(f"  Error getting device {i} info: {e}")
             try:
-                device_info = self._pyaudio.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pyaudio.get_default_input_device_info()
+                device_info = self._pyaudio.get_device_info_by_index(self.input_device_index) if self.input_device_index is not None else self._pyaudio.get_default_input_device_info()
                 print(f"\n[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
                 print(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
                 print(f"[AudioModule] Error getting selected device info: {e}")
 
-    def add_audio_level_callback(self, callback: Callable[[float], None]) -> None:
-        """Register a callback for real-time audio level (dB)."""
-        self._audio_level_callbacks.append(callback)
+        # Start output audio monitoring thread if output_device_index is provided
+        if self.output_device_index is not None:
+            self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, daemon=True)
+            self._output_monitor_thread.start()
 
-    def _trigger_audio_level_callbacks(self, audio_level: float) -> None:
-        """Trigger all registered audio level callbacks with the given dB level."""
-        for callback in self._audio_level_callbacks:
+    def _output_monitor_loop(self):
+        """
+        Monitor the output (loopback/Stereo Mix) device for real audio output levels and trigger callbacks.
+        """
+        try:
+            stream = self._pyaudio.open(
+                format=self.default_format,
+                channels=1,
+                rate=self.default_rate,
+                input=True,
+                input_device_index=self.output_device_index,
+                frames_per_buffer=self.default_chunk_size
+            )
+            if self.debug:
+                print(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
+            while True:
+                data = stream.read(self.default_chunk_size, exception_on_overflow=False)
+                audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                rms = np.sqrt(np.mean(audio_data ** 2))
+                db = 20 * np.log10(rms) if rms > 0 else -100
+                self._trigger_output_audio_level_callbacks(db)
+        except Exception as e:
+            if self.debug:
+                print(f"[AudioModule] Output monitor error: {e}")
+
+    def add_input_audio_level_callback(self, callback: Callable[[float], None]) -> None:
+        """Register a callback for real-time input audio level (dB)."""
+        self._input_audio_level_callbacks.append(callback)
+
+    def add_output_audio_level_callback(self, callback: Callable[[float], None]) -> None:
+        """Register a callback for real-time output audio level (dB)."""
+        self._output_audio_level_callbacks.append(callback)
+
+    def _trigger_input_audio_level_callbacks(self, audio_level: float) -> None:
+        """Trigger all registered input audio level callbacks with the given dB level."""
+        for callback in self._input_audio_level_callbacks:
             try:
                 callback(audio_level)
             except Exception as e:
                 if self.debug:
-                    print(f"Error in audio level callback: {e}")
+                    print(f"Error in input audio level callback: {e}")
+
+    def _trigger_output_audio_level_callbacks(self, audio_level: float) -> None:
+        """Trigger all registered output audio level callbacks with the given dB level."""
+        for callback in self._output_audio_level_callbacks:
+            try:
+                callback(audio_level)
+            except Exception as e:
+                if self.debug:
+                    print(f"Error in output audio level callback: {e}")
         
     def _initialize_pyaudio(self):
         try:
@@ -105,7 +151,7 @@ class AudioModule:
             return None
             
         try:
-            device_info = self._pyaudio.get_device_info_by_index(self.device_index) if self.device_index is not None else self._pyaudio.get_default_input_device_info()
+            device_info = self._pyaudio.get_device_info_by_index(self.input_device_index) if self.input_device_index is not None else self._pyaudio.get_default_input_device_info()
             print(f"\nUsing audio input device:")
             print(f"  Name: {device_info['name']}")
             print(f"  Index: {device_info['index']}")

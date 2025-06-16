@@ -29,7 +29,7 @@ import { useRobotState } from '@/stores/robotState';
 
 const robot = useRobotState();
 
-const inputDb = computed(() => robot.audioLevelDb);
+const inputDb = computed(() => robot.inputAudioLevelDb);
 const outputDb = computed(() => robot.outputAudioLevelDb);
 
 const inputPercent = computed(() => {

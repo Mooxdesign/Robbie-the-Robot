@@ -12,7 +12,7 @@ export const useRobotState = defineStore('robotState', () => {
     { id: 1, message: 'System started', time: '2 minutes ago' },
     { id: 2, message: 'Sensors calibrated', time: '5 minutes ago' }
   ])
-  const audioLevelDb = ref(-100)
+  const inputAudioLevelDb = ref(-100)
   const outputAudioLevelDb = ref(-100)
   // Config fields
   const robotName = ref('Robbie')
@@ -66,15 +66,15 @@ export const useRobotState = defineStore('robotState', () => {
     if (state.battery_level !== undefined) batteryLevel.value = state.battery_level
     if (state.temperature !== undefined) temperature.value = state.temperature
     if (state.recent_activity !== undefined) recentActivity.value = state.recent_activity
-    if (state.audio_level_db !== undefined) audioLevelDb.value = state.audio_level_db
-    if (state.output_audio_level_db !== undefined) outputAudioLevelDb.value = state.output_audio_level_db
+    if (state.input_audio_level_db !== undefined) inputAudioLevelDb.value = state.input_audio_level_db
+    if (state.output_audio_level_db !== undefined) outputAudioLevelDb.value = state.output_audio_level_db;
     // ...add other fields as needed
   }
 
   return {
     // State
     isConnected, robotState, batteryLevel, temperature, recentActivity,
-    audioLevelDb, outputAudioLevelDb,
+    inputAudioLevelDb, outputAudioLevelDb,
     robotName, maxSpeed, sensorUpdateRate, sensorThreshold, pidP, pidI, pidD,
     // Actions
     wakeRobot, setRobotName, setMaxSpeed, setSensorUpdateRate, setSensorThreshold, setPidP, setPidI, setPidD, updateFromBackend
