@@ -289,7 +289,13 @@ class SpeechToTextModule:
             if elapsed > self._phrase_timeout and buffer_len > 0:
                 with self._lock:
                     audio_concat = np.concatenate(self._audio_buffer)
-                if np.max(np.abs(audio_concat)) > 0.01:  # adjust threshold as needed
+                # Convert dB threshold to linear amplitude threshold
+                # linear = 10 ** (dB / 20)
+                linear_threshold = 10 ** (self._audio_threshold / 20)
+                max_amplitude = np.max(np.abs(audio_concat))
+                if self.debug:
+                    print(f"[DEBUG] Silence check: max_amplitude={max_amplitude:.5f}, linear_threshold={linear_threshold:.5f}, dB_threshold={self._audio_threshold}")
+                if max_amplitude > linear_threshold:
                     print(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, processing phrase.")
                     if not getattr(self, '_process_thread', None) or not self._process_thread.is_alive():
                         self._process_thread = threading.Thread(target=self._process_audio)
