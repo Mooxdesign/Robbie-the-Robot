@@ -7,11 +7,14 @@ import queue
 import numpy as np
 import pyaudio
 import threading
+import logging
 from typing import Optional, Callable, List, Dict, Tuple
 
 from config import Config
 
 import wave
+
+logger = logging.getLogger(__name__)
 
 class AudioModule:
     """Core audio module for managing audio devices, streams, and routing"""
@@ -52,20 +55,20 @@ class AudioModule:
 
         # Debug: List and show selected audio input device
         if self.debug and self._pyaudio:
-            print("\n[AudioModule] Listing available audio input devices:")
+            logger.info("\n[AudioModule] Listing available audio input devices:")
             for i in range(self._pyaudio.get_device_count()):
                 try:
                     dev_info = self._pyaudio.get_device_info_by_index(i)
                     if dev_info.get('maxInputChannels', 0) > 0:
-                        print(f"  [{i}] {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
+                        logger.info(f"  [{i}] {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
                 except Exception as e:
-                    print(f"  Error getting device {i} info: {e}")
+                    logger.error(f"  Error getting device {i} info: {e}")
             try:
                 device_info = self._pyaudio.get_device_info_by_index(self.input_device_index) if self.input_device_index is not None else self._pyaudio.get_default_input_device_info()
-                print(f"\n[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
-                print(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
+                logger.info(f"[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
+                logger.info(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
-                print(f"[AudioModule] Error getting selected device info: {e}")
+                logger.error(f"[AudioModule] Error getting selected device info: {e}")
 
         # Start output audio monitoring thread if output_device_index is provided
         if self.output_device_index is not None:
@@ -86,7 +89,7 @@ class AudioModule:
                 frames_per_buffer=self.default_chunk_size
             )
             if self.debug:
-                print(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
+                logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
             while True:
                 data = stream.read(self.default_chunk_size, exception_on_overflow=False)
                 audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -95,7 +98,7 @@ class AudioModule:
                 self._trigger_output_audio_level_callbacks(db)
         except Exception as e:
             if self.debug:
-                print(f"[AudioModule] Output monitor error: {e}")
+                logger.error(f"[AudioModule] Output monitor error: {e}")
 
     def add_input_audio_level_callback(self, callback: Callable[[float], None]) -> None:
         """Register a callback for real-time input audio level (dB)."""
@@ -112,7 +115,7 @@ class AudioModule:
                 callback(audio_level)
             except Exception as e:
                 if self.debug:
-                    print(f"Error in input audio level callback: {e}")
+                    logger.exception(f"Error in input audio level callback: {e}")
 
     def _trigger_output_audio_level_callbacks(self, audio_level: float) -> None:
         """Trigger all registered output audio level callbacks with the given dB level."""
@@ -121,29 +124,29 @@ class AudioModule:
                 callback(audio_level)
             except Exception as e:
                 if self.debug:
-                    print(f"Error in output audio level callback: {e}")
+                    logger.exception(f"Error in output audio level callback: {e}")
         
     def _initialize_pyaudio(self):
         try:
             self._pyaudio = pyaudio.PyAudio()
             if self.debug:
-                print("PyAudio initialized successfully")
+                logger.info("PyAudio initialized successfully")
         except Exception as e:
-            print(f"Failed to initialize PyAudio: {e}")
+            logger.error(f"Failed to initialize PyAudio: {e}")
             
     def list_devices(self):
         """List available audio devices"""
         if not self._pyaudio:
             return
             
-        print("\nAvailable audio devices:")
+        logger.info("Available audio devices:")
         for i in range(self._pyaudio.get_device_count()):
             try:
                 dev_info = self._pyaudio.get_device_info_by_index(i)
-                print(f"{i}: {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
+                logger.info(f"{i}: {dev_info['name']} (inputs: {dev_info.get('maxInputChannels', 0)})")
             except Exception as e:
-                print(f"Error getting device {i} info: {e}")
-        print()
+                logger.error(f"Error getting device {i} info: {e}")
+        logger.info("")
         
     def get_device_info(self):
         """Get info about current audio device"""
@@ -152,15 +155,15 @@ class AudioModule:
             
         try:
             device_info = self._pyaudio.get_device_info_by_index(self.input_device_index) if self.input_device_index is not None else self._pyaudio.get_default_input_device_info()
-            print(f"\nUsing audio input device:")
-            print(f"  Name: {device_info['name']}")
-            print(f"  Index: {device_info['index']}")
-            print(f"  Sample Rate: {int(device_info['defaultSampleRate'])} Hz")
-            print(f"  Max Input Channels: {device_info['maxInputChannels']}")
-            print()
+            logger.info("Using audio input device:")
+            logger.info(f"  Name: {device_info['name']}")
+            logger.info(f"  Index: {device_info['index']}")
+            logger.info(f"  Sample Rate: {int(device_info['defaultSampleRate'])} Hz")
+            logger.info(f"  Max Input Channels: {device_info['maxInputChannels']}")
+            logger.info("")
             return device_info
         except Exception as e:
-            print(f"Error getting device info: {e}")
+            logger.error(f"Error getting device info: {e}")
             return None
             
     def create_stream(self, 
@@ -204,9 +207,23 @@ class AudioModule:
                 rms = np.sqrt(np.mean(audio_np ** 2))
                 db = 20 * np.log10(rms + 1e-10)  # add epsilon to avoid log(0)
                 # if self.debug:
-                    # print(f"\rAudio ddevel: {db:.1f} dB", end="")
+                #     logger.info(f"\rAudio ddevel: {db:.1f} dB", end="")
             return (None, pyaudio.paContinue)
         
+        # Determine stream type and device index
+        if input and not output:
+            stream_type = "input"
+            device_index = self.input_device_index
+        elif output and not input:
+            stream_type = "output"
+            device_index = self.output_device_index
+        elif input and output:
+            stream_type = "duplex"
+            device_index = f"in:{self.input_device_index}|out:{self.output_device_index}"
+        else:
+            stream_type = "unknown"
+            device_index = None
+
         # Create stream
         stream_id = f"{rate}_{channels}_{format}_{chunk_size}_{input}_{output}"
         stream = self._pyaudio.open(format=format,
@@ -216,9 +233,14 @@ class AudioModule:
                                output=output,
                                frames_per_buffer=chunk_size,
                                stream_callback=audio_callback)
-        print(f"[AudioModule] Created stream with rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
-        # Store stream
-        self._streams[stream_id] = {"stream": stream, "callback": callback}
+        logger.info(f"[AudioModule] Created stream id={stream_id} type={stream_type} device={device_index} rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
+        # Store stream with metadata
+        self._streams[stream_id] = {
+            "stream": stream,
+            "callback": callback,
+            "type": stream_type,
+            "device_index": device_index
+        }
         
         return stream_id
         
@@ -248,7 +270,7 @@ class AudioModule:
             stream.stop_stream()
         except Exception as e:
             if self.debug:
-                print(f"Error stopping stream: {e}")
+                logger.error(f"Error stopping stream: {e}")
 
     def close_stream(self, stream_id: str):
         """
@@ -258,7 +280,10 @@ class AudioModule:
         """
         if stream_id not in self._streams:
             raise ValueError(f"Unknown stream ID: {stream_id}")
-        stream = self._streams[stream_id]["stream"]
+        stream_info = self._streams[stream_id]
+        stream = stream_info["stream"]
+        stream_type = stream_info.get("type", "unknown")
+        device_index = stream_info.get("device_index", None)
         # Stop if not already stopped
         try:
             if stream.is_active():
@@ -269,11 +294,26 @@ class AudioModule:
             stream.close()
         except Exception as e:
             if self.debug:
-                print(f"Error closing stream: {e}")
+                logger.error(f"Error closing stream: {e}")
         finally:
+            if self.debug:
+                logger.info(f"[AudioModule] Closed stream (id={stream_id}) type={stream_type} device={device_index}")
             del self._streams[stream_id]
 
         
+    def get_stream_info(self, stream_id: str):
+        """
+        Retrieve metadata for a given stream (type and device index).
+        Returns a dict with keys: type, device_index. Returns None if not found.
+        """
+        info = self._streams.get(stream_id)
+        if info is None:
+            return None
+        return {
+            "type": info.get("type", "unknown"),
+            "device_index": info.get("device_index", None)
+        }
+
     def get_volume(self, signal: np.ndarray) -> float:
         """Compute RMS volume of an audio signal."""
         if not isinstance(signal, np.ndarray):
@@ -330,7 +370,7 @@ class AudioModule:
 
     def cleanup(self) -> None:
         """Clean up resources"""
-        print("\nCleaning up audio resources...")
+        logger.info("Cleaning up audio resources...")
         for stream_id in list(self._streams.keys()):
             stream = self._streams[stream_id]["stream"]
             try:
@@ -341,12 +381,12 @@ class AudioModule:
                 stream.close()
             except Exception as e:
                 if self.debug:
-                    print(f"Error closing stream {stream_id}: {e}")
+                    logger.error(f"Error closing stream {stream_id}: {e}")
             del self._streams[stream_id]
         if self._pyaudio:
             try:
                 self._pyaudio.terminate()
-                print("PyAudio terminated")
+                logger.info("PyAudio terminated")
             except Exception as e:
-                print(f"Error terminating PyAudio: {e}")
+                logger.error(f"Error terminating PyAudio: {e}")
             self._pyaudio = None

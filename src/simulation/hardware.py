@@ -5,7 +5,10 @@ import sys
 import time
 import threading
 import numpy as np
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from .visualizer import get_visualizer
 
@@ -29,7 +32,7 @@ class SimulatedDCMotor:
         self._throttle = max(-1.0, min(1.0, value))
         if self._last_throttle != self._throttle:
             if VERBOSE:
-                print(f"[SIM] DC Motor throttle set to {self._throttle:.2f}")
+                logger.debug(f"[SIM] DC Motor throttle set to {self._throttle:.2f}")
             self._last_throttle = self._throttle
 
 class SimulatedServo:
@@ -56,7 +59,7 @@ class SimulatedServo:
         self._angle = max(0.0, min(180.0, value))
         if self._last_angle != self._angle:
             if VERBOSE:
-                print(f"[SIM] Servo angle set to {self._angle:.1f}")
+                logger.debug(f"[SIM] Servo angle set to {self._angle:.1f}")
             self._last_angle = self._angle
 
 class SimulatedMotorKit:

@@ -32,13 +32,27 @@ export const api = {
 
     // WebSocket connection
     initWebSocket() {
-        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-            return;
+        if (this.ws) {
+            this.ws.close();
         }
-        this.ws = new WebSocket('ws://localhost:8000/ws');
+        this.ws = new WebSocket("ws://localhost:8000/ws");
         this.ws.onopen = () => {
-            console.log('[DEBUG] WebSocket connected');
-            this.reconnectDelay = 1000;
+            console.log("[api.js] WebSocket connected");
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+                this.reconnectTimeout = null;
+            }
+        };
+        this.ws.onclose = (event) => {
+            console.warn("[api.js] WebSocket closed, attempting to reconnect...", event);
+            this.reconnectTimeout = setTimeout(() => {
+                this.initWebSocket();
+            }, 2000); // Try to reconnect after 2 seconds
+        };
+        this.ws.onerror = (event) => {
+            console.error("[api.js] WebSocket error:", event);
+            // Optionally close to trigger onclose and reconnect
+            this.ws.close();
         };
         this.ws.onmessage = (event) => {
             let data;

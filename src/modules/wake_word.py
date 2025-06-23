@@ -15,6 +15,9 @@ from typing import Optional, Callable, List
 
 from .audio import AudioModule
 
+import logging
+logger = logging.getLogger(__name__)
+
 class WakeWordModule:
     """
     Wake word detection using Porcupine.
@@ -47,7 +50,7 @@ class WakeWordModule:
         
         # Initialize Porcupine
         try:
-            print(f"wake_word={wake_word}, access_key={access_key}")
+            logger.debug(f"wake_word={wake_word}, access_key={access_key}")
             self.porcupine = pvporcupine.create(
                 access_key=access_key,
                 keyword_paths=[wake_word] if wake_word.endswith('.ppn') else None,
@@ -55,10 +58,10 @@ class WakeWordModule:
                 sensitivities=[sensitivity]
             )
             if self.debug:
-                print("Porcupine initialized")
+                logger.info("Porcupine initialized")
         except Exception as e:
-            print(f"Failed to initialize Porcupine: {e}")
-            print(f"Failed to dedref")
+            logger.error(f"Failed to initialize Porcupine: {e}")
+            logger.error("Failed to dedref")
             self.porcupine = None
             return
             
@@ -82,7 +85,7 @@ class WakeWordModule:
         """Start listening for wake word"""
         if self.is_listening or not self.porcupine:
             if self.debug:
-                print(f"Cannot start wake word: already listening={self.is_listening}, porcupine={self.porcupine is not None}")
+                logger.warning(f"Cannot start wake word: already listening={self.is_listening}, porcupine={self.porcupine is not None}")
             return
             
         self.is_listening = True
@@ -97,10 +100,10 @@ class WakeWordModule:
                 channels=1
             )
             if self.debug:
-                print("Starting wake word detection")
+                logger.info("Starting wake word detection")
             self.audio.start_stream(self._stream_id)
         except Exception as e:
-            print(f"Failed to start wake word detection: {e}")
+            logger.error(f"Failed to start wake word detection: {e}")
             self.is_listening = False
             
     def stop_listening(self):
@@ -110,14 +113,14 @@ class WakeWordModule:
             
         self.is_listening = False
         if self.debug:
-            print("Stopped wake word detection")
+            logger.info("Stopped wake word detection")
         
         if self._stream_id:
             try:
                 self.audio.close_stream(self._stream_id)
             except Exception as e:
                 if self.debug:
-                    print(f"Error stopping wake word stream: {e}")
+                    logger.error(f"Error stopping wake word stream: {e}")
             self._stream_id = None
             
     def _audio_callback(self, in_data, frame_count, time_info, status_flags):
@@ -135,7 +138,7 @@ class WakeWordModule:
         """
         if not self.is_listening:
             if self.debug:
-                print("Wake word callback called but not listening")
+                logger.warning("Wake word callback called but not listening")
             return (None, 0)  # Continue
             
         try:
@@ -146,7 +149,7 @@ class WakeWordModule:
             
             if result >= 0:  # Wake word detected
                 if self.debug:
-                    print("\nWake word detected!")
+                    logger.info("Wake word detected!")
                     
                 # Notify callbacks
                 for callback in self._detection_callbacks:
@@ -154,11 +157,11 @@ class WakeWordModule:
                         callback()
                     except Exception as e:
                         if self.debug:
-                            print(f"Error in detection callback: {e}")
+                            logger.error(f"Error in detection callback: {e}")
                     
         except Exception as e:
             if self.debug:
-                print(f"\nError processing audio: {e}")
+                logger.error(f"Error processing audio: {e}")
                 
         return (None, 0)  # Continue
 

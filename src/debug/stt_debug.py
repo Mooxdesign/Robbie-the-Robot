@@ -9,30 +9,32 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import time
 from modules.audio import AudioModule
 from modules.speech_to_text import SpeechToTextModule
+import logging
+logger = logging.getLogger(__name__)
 
 def on_transcription(text):
     print(f"[DEBUG SCRIPT] Transcription: {text}")
 
 def on_timeout():
-    print("[DEBUG SCRIPT] Silence timeout reached.")
+    logger.info("[DEBUG SCRIPT] Silence timeout reached.")
 
 def main():
-    print("[DEBUG SCRIPT] Initializing audio...")
+    logger.info("[DEBUG SCRIPT] Initializing audio...")
     audio = AudioModule(debug=True)
-    print("[DEBUG SCRIPT] Initializing SpeechToTextModule...")
+    logger.info("[DEBUG SCRIPT] Initializing SpeechToTextModule...")
     stt = SpeechToTextModule(audio_module=audio, debug=True)
     stt._audio_threshold = -40  # dB threshold for speech detection
     stt._phrase_timeout = 1.0   # Seconds of silence to trigger phrase segmentation
     stt.add_transcription_callback(on_transcription)
     stt.add_timeout_callback(on_timeout)
-    print("[DEBUG SCRIPT] Starting speech-to-text listening...")
+    logger.info("[DEBUG SCRIPT] Starting speech-to-text listening...")
     stt.start_listening()
-    print("[DEBUG SCRIPT] Speak into the microphone. Ctrl+C to exit.")
+    logger.info("[DEBUG SCRIPT] Speak into the microphone. Ctrl+C to exit.")
     try:
         while True:
             time.sleep(0.2)
     except KeyboardInterrupt:
-        print("[DEBUG SCRIPT] Stopping...")
+        logger.warning("[DEBUG SCRIPT] Stopping...")
         stt.stop_listening()
         audio.cleanup()
 

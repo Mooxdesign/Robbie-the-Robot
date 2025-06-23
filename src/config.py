@@ -3,6 +3,8 @@
 import os
 import yaml
 from typing import Any, Dict, List, Optional, Union
+import logging
+logger = logging.getLogger(__name__)
 
 class Config:
     """Configuration manager for robot settings"""
@@ -24,7 +26,7 @@ class Config:
             with open(config_path, 'r') as f:
                 self.config = yaml.safe_load(f)
         except Exception as e:
-            print(f"Failed to load config from {config_path}: {e}")
+            logger.error(f"Failed to load config from {config_path}: {e}")
             self.config = {}
             
     def get(self, *keys: str, default: Any = None) -> Any:

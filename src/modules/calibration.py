@@ -3,9 +3,12 @@
 import time
 import threading
 import json
+import logging
 import numpy as np
 from typing import Dict, Optional
 from .motor import MotorModule
+
+logger = logging.getLogger(__name__)
 
 class CalibrationController:
     """
@@ -66,9 +69,9 @@ class CalibrationController:
             with open(filename, 'r') as f:
                 self.calibration = json.load(f)
             if self.debug:
-                print("Loaded calibration from file")
+                logger.info("Loaded calibration from file")
         except Exception as e:
-            print(f"Failed to load calibration: {e}")
+            logger.exception(f"Failed to load calibration: {e}")
             
     def save_calibration(self, filename: str = 'calibration.json'):
         """Save calibration to file"""
@@ -76,9 +79,9 @@ class CalibrationController:
             with open(filename, 'w') as f:
                 json.dump(self.calibration, f, indent=2)
             if self.debug:
-                print("Saved calibration to file")
+                logger.info("Saved calibration to file")
         except Exception as e:
-            print(f"Failed to save calibration: {e}")
+            logger.exception(f"Failed to save calibration: {e}")
             
     def calibrate_motors(self) -> Dict:
         """
@@ -118,7 +121,7 @@ class CalibrationController:
             results = {}
             
             # Calibrate head pan
-            print("Calibrating head pan...")
+            logger.info("Calibrating head pan...")
             self.motor.move_head(pan=0)
             input("Press Enter when head is centered horizontally")
             results['head_pan'] = {
@@ -134,7 +137,7 @@ class CalibrationController:
             results['head_pan']['max'] = self.motor.servo_positions['head_pan']
             
             # Calibrate head tilt
-            print("Calibrating head tilt...")
+            logger.info("Calibrating head tilt...")
             self.motor.move_head(tilt=0)
             input("Press Enter when head is centered vertically")
             results['head_tilt'] = {
@@ -150,7 +153,7 @@ class CalibrationController:
             results['head_tilt']['max'] = self.motor.servo_positions['head_tilt']
             
             # Calibrate arms
-            print("Calibrating left arm...")
+            logger.info("Calibrating left arm...")
             self.motor.move_arm('left', 0)
             input("Press Enter when left arm is in down position")
             results['arm_left'] = {
@@ -161,7 +164,7 @@ class CalibrationController:
             input("Press Enter when left arm is in up position")
             results['arm_left']['up'] = self.motor.servo_positions['arm_left']
             
-            print("Calibrating right arm...")
+            logger.info("Calibrating right arm...")
             self.motor.move_arm('right', 0)
             input("Press Enter when right arm is in down position")
             results['arm_right'] = {
@@ -248,4 +251,4 @@ class CalibrationController:
             self.motor.ARM_RIGHT_UP = servos['arm_right']['up']
             
             if self.debug:
-                print("Applied calibration to motor controller")
+                logger.info("Applied calibration to motor controller")

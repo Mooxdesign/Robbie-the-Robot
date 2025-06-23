@@ -5,6 +5,12 @@ from config import Config
 from modules.vision import VisionModule
 from modules.audio import AudioModule
 from modules.leds import LedsModule
+from enum import Enum, auto
+from typing import Optional, Callable
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .state import RobotState
 from .speech import SpeechController
 from .conversation import ConversationController
@@ -14,6 +20,13 @@ robot_instance = None
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
     def __init__(self, debug: bool = False, api_enabled: bool = False):
+        # Start WebSocket thread for backend updates (only if API enabled)
+        self._ws_url = "ws://localhost:8000/ws"
+        self._ws = None
+        self._ws_thread = None
+        if api_enabled:
+            self._ws_thread = threading.Thread(target=self._start_ws_client, daemon=True)
+            self._ws_thread.start()
         # Load config
         self.config = Config()
         self._lock = threading.Lock()
@@ -49,28 +62,28 @@ class RobotController:
                 break
             except Exception as e:
                 if self.debug:
-                    print(f"WebSocket connection failed: {e}, retrying...")
+                    logger.error(f"WebSocket connection failed: {e}, retrying...")
                 import time; time.sleep(2)
 
     def _send_ws_command(self, command):
         try:
-            if self.debug:
-                print(f"[DEBUG] _send_ws_command sending: {command}")
+            # if self.debug:
+            #     print(f"[DEBUG] _send_ws_command sending: {command}")
             if self._ws and self._ws.connected:
                 self._ws.send(json.dumps(command))
         except Exception as e:
             if self.debug:
-                print(f"WebSocket send failed: {e}")
+                logger.error(f"WebSocket send failed: {e}")
 
     def start(self):
         if self.debug:
-            print("Starting robot...")
+            logger.info("Starting robot...")
         # Enter standby mode and begin wake word detection
         self._return_to_standby()
 
     def stop(self):
         if self.debug:
-            print("Stopping robot...")
+            logger.info("Stopping robot...")
         self._cleanup()
 
     def _set_state(self, new_state: RobotState):
@@ -78,7 +91,7 @@ class RobotController:
         Set robot state and update LEDs
         """
         if self.debug:
-            print(f"State transition: {self._state} -> {new_state}")
+            logger.info(f"State transition: {self._state} -> {new_state}")
         self._state = new_state
         # Update LED colors based on state
         if self.leds:
@@ -100,7 +113,7 @@ class RobotController:
     def _return_to_standby(self):
         """Return to standby mode"""
         if self.debug:
-            print("Returning to standby mode")
+            logger.info("Returning to standby mode")
         # Stop speech recognition
         if self.speech:
             self.speech.speech_to_text.stop_listening()
@@ -114,10 +127,10 @@ class RobotController:
         """Wake up the robot from STANDBY, as if the wake word was detected or UI button pressed."""
         if self._state != RobotState.STANDBY:
             if self.debug:
-                print(f"[wake_up] Ignored: not in STANDBY (current state: {self._state})")
+                logger.debug(f"[wake_up] Ignored: not in STANDBY (current state: {self._state})")
             return
         if self.debug:
-            print("[wake_up] Triggered: transitioning to LISTENING and starting speech recognition.")
+            logger.info("[wake_up] Triggered: transitioning to LISTENING and starting speech recognition.")
         if self.speech:
             # Stop wake word detection
             self.speech.wake_word.stop_listening()
@@ -143,12 +156,12 @@ class RobotController:
         if send:
             self._last_input_audio_level_sent = input_audio_level_db
             self._last_input_audio_level_time = now
-            if self.debug:
-                print(f"[DEBUG] _on_input_audio_level sending input_audio_level_db: {input_audio_level_db}")
+            # if self.debug:
+            #     print(f"[DEBUG] _on_input_audio_level sending input_audio_level_db: {input_audio_level_db}")
             self._send_ws_command({"type": "update_audio_level", "input_audio_level_db": float(input_audio_level_db)})
-        else:
-            if self.debug:
-                print(f"[DEBUG] _on_input_audio_level throttled input_audio_level_db: {input_audio_level_db}")
+        # else:
+        #     if self.debug:
+        #         print(f"[DEBUG] _on_input_audio_level throttled input_audio_level_db: {input_audio_level_db}")
 
     def _on_output_audio_level(self, output_audio_level_db: float):
         """Handle real-time output audio level updates from the output (loopback) device (in dB)."""

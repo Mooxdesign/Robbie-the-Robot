@@ -4,6 +4,9 @@ import threading
 import time
 import pyttsx3
 from typing import Optional, Dict, Any, List, Tuple, Union
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VoiceModule(threading.Thread):
     """Text-to-speech module using pyttsx3 with proper event handling"""
@@ -24,6 +27,7 @@ class VoiceModule(threading.Thread):
             debug: Enable debug output
         """
         self.debug = debug
+        self.bypass = False
         self.rate = rate
         self.volume = volume
         self.voice_id = voice_id
@@ -67,7 +71,7 @@ class VoiceModule(threading.Thread):
             voices = self.get_voices()
             if voice_id not in voices:
                 if self.debug:
-                    print(f"Voice ID {voice_id} not found")
+                    logger.warning(f"Voice ID {voice_id} not found")
                 return False
             self.voice_id = voice_id
             if self.engine:
@@ -81,35 +85,36 @@ class VoiceModule(threading.Thread):
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
             
+            # Log all available voices
+            voices = engine.getProperty('voices')
+            logger.info(f"[VoiceModule] Available voices:")
+            for v in voices:
+                logger.info(f"- {v.id}: {v.name} (languages={v.languages}, gender={getattr(v, 'gender', None)}, age={getattr(v, 'age', None)})")
             # Always use a known working voice if available
             preferred_names = [
                 "Microsoft David Desktop - English (United States)",
                 "Microsoft Zira Desktop - English (United States)"
             ]
-            voices = engine.getProperty('voices')
             selected_voice = None
             for v in voices:
                 if v.name in preferred_names:
-                    selected_voice = v.id
+                    selected_voice = v
                     break
             if selected_voice:
-                engine.setProperty('voice', selected_voice)
+                engine.setProperty('voice', selected_voice.id)
+                logger.info(f"[VoiceModule] Selected preferred voice: {selected_voice.name}")
             elif voices:
                 engine.setProperty('voice', voices[0].id)
-                if self.debug:
-                    print(f"No preferred voice found. Using fallback: {voices[0].name}")
+                logger.info(f"[VoiceModule] No preferred voice found. Using fallback: {voices[0].name}")
             else:
-                if self.debug:
-                    print("No voices available for TTS.")
+                logger.error("[VoiceModule] No voices available for TTS.")
             # Connect event handlers
             engine.connect('finished-utterance', self._on_completed)
             engine.connect('started-word', self._on_cancel)
-            if self.debug:
-                print("TTS engine initialized")
+            logger.info("[VoiceModule] TTS engine initialized")
             return engine
         except Exception as e:
-            if self.debug:
-                print(f"Failed to initialize TTS engine: {e}")
+            logger.error(f"[VoiceModule] Failed to initialize TTS engine: {e}")
             return None
 
         
@@ -143,16 +148,16 @@ class VoiceModule(threading.Thread):
             bool: True if successful
         """
 
-        print(f"[VoiceModule] say() called with: {text} (blocking={blocking})")
-        print(f"[VoiceModule] State: is_alive={self._is_alive.is_set()}, engine={self.engine}")
+        logger.debug(f"[VoiceModule] say() called with: {text} (blocking={blocking})")
+        logger.debug(f"[VoiceModule] State: is_alive={self._is_alive.is_set()}, engine={self.engine}")
 
         # Check if engine is initialized and thread is alive
         if not self.engine:
-            print("TTS engine not initialized")
+            logger.error("TTS engine not initialized")
             return False
         if not self._is_alive.is_set():
             if self.debug:
-                print("Speech thread not running")
+                logger.warning("Speech thread not running")
             return False
             
         try:
@@ -170,7 +175,7 @@ class VoiceModule(threading.Thread):
                 for t in text:
                     self._text.append(t)
                     if self.debug:
-                        print(f"[VoiceModule] Queued speech: '{t[0]}' (blocking={t[1]})")
+                        logger.debug(f"[VoiceModule] Queued speech: '{t[0]}' (blocking={t[1]})")
             
             # Signal speech thread
             self._say.set()
@@ -183,7 +188,7 @@ class VoiceModule(threading.Thread):
             return True
             
         except Exception as e:
-            print(f"[VoiceModule] Exception in say(): {e}")
+            logger.exception(f"[VoiceModule] Exception in say(): {e}")
             return False
             
     def cancel(self):
@@ -202,22 +207,23 @@ class VoiceModule(threading.Thread):
             time.sleep(0.5)
             
     def _on_completed(self, name, completed):
-        """Handle speech completion"""
+        logger.debug(f"[VoiceModule] _on_completed called: name={name}, completed={completed}")
         if completed:
             if self.debug:
-                print(f"Speech completed: {name}")
+                logger.info(f"Speech completed: {name}")
             self._notify_completion()
+            logger.debug(f"[VoiceModule] _notify_completion called from _on_completed")
             
     def _notify_completion(self):
         """Notify completion callbacks"""
-        if self.debug:
-            print("Notifying completion callbacks")
+        logger.debug("[VoiceModule] Notifying completion callbacks")
         for callback in self._completion_callbacks:
             try:
+                logger.debug(f"[VoiceModule] Calling completion callback: {callback}")
                 callback()
             except Exception as e:
-                if self.debug:
-                    print(f"Error in completion callback: {e}")
+                logger.exception(f"[VoiceModule] Error in completion callback: {e}")
+        logger.debug("[VoiceModule] All completion callbacks notified")
                     
     def add_completion_callback(self, callback):
         """Add callback to be called when speech completes"""
@@ -238,7 +244,7 @@ class VoiceModule(threading.Thread):
         """
         if not self.engine:
             if self.debug:
-                print("TTS engine not initialized")
+                logger.error("TTS engine not initialized")
             return {}
             
         try:
@@ -262,7 +268,7 @@ class VoiceModule(threading.Thread):
             return voices
         except Exception as e:
             if self.debug:
-                print(f"Error getting voices: {e}")
+                logger.exception(f"Error getting voices: {e}")
             return {}
             
 
@@ -278,7 +284,7 @@ class VoiceModule(threading.Thread):
         try:
             if not self.engine:
                 if self.debug:
-                    print("TTS engine not initialized")
+                    logger.error("TTS engine not initialized")
                 return False
 
             # If voice_id provided, use it directly
@@ -286,7 +292,7 @@ class VoiceModule(threading.Thread):
                 voices = self.get_voices()
                 if voice_id not in voices:
                     if self.debug:
-                        print(f"Voice ID {voice_id} not found")
+                        logger.warning(f"Voice ID {voice_id} not found")
                     return False
                 self.voice_id = voice_id
             # Otherwise try to find voice by gender
@@ -294,29 +300,28 @@ class VoiceModule(threading.Thread):
                 self.voice_id = self._find_voice_by_gender(gender)
                 if not self.voice_id:
                     if self.debug:
-                        print(f"No {gender} voice found")
+                        logger.warning(f"No {gender} voice found")
                     return False
             else:
                 if self.debug:
-                    print("Must provide either voice_id or gender")
+                    logger.warning("Must provide either voice_id or gender")
                 return False
 
             self.engine.setProperty('voice', self.voice_id)
             if self.debug:
                 voices = self.get_voices()
-                print(f"Changed to voice: {voices[self.voice_id]['name']}")
+                logger.info(f"Changed to voice: {voices[self.voice_id]['name']}")
             return True
         except Exception as e:
             if self.debug:
-                print(f"Error changing voice: {e}")
+                logger.exception(f"Error changing voice: {e}")
             return False
 
     def run(self):
         """Main speech thread loop"""
         self.engine = self._init_engine()
         if not self.engine:
-            if self.debug:
-                print("TTS engine initialization failed. Exiting speech thread.")
+            logger.error("[VoiceModule] TTS engine initialization failed. Exiting speech thread.")
             return  # Exit thread cleanly if engine failed to initialize
 
         while self._is_alive.is_set():
@@ -327,24 +332,27 @@ class VoiceModule(threading.Thread):
                 while not self._cancel.is_set() and len(self._text):
                     with self._text_lock:
                         text, blocking = self._text.pop(0)
-                    if not self.engine:
-                        if self.debug:
-                            print("TTS engine unavailable during speech. Skipping.")
-                        continue
-                    if self.debug:
-                        print(f"[VoiceModule] Speaking: '{text}'")
                     try:
-                        self.engine.say(text)
-                        self.engine.runAndWait()
-                        if self.debug:
-                            print(f"[VoiceModule] Finished speaking: '{text}'")
+                        if self.bypass:
+                            import time
+                            time.sleep(1)  # Simulate time taken to speak
+                            self._notify_completion()
+                        else:
+                            self.engine.say(text)
+                            logger.info(f"[VoiceModule] Called engine.say() for: '{text}'")
+                            self.engine.runAndWait()
+                            logger.info(f"[VoiceModule] Finished engine.runAndWait() for: '{text}'")
+
                     except Exception as e:
-                        if self.debug:
-                            print(f"[VoiceModule] Error during speech: {e}")
+                        logger.exception(f"[VoiceModule] Error during speech: {e}")
         # Cleanup
         if self.engine:
             try:
                 self.engine.stop()
             except Exception as e:
+                logger.exception(f"[VoiceModule] Error during cleanup: {e}")
+            try:
+                self.engine.stop()
+            except Exception as e:
                 if self.debug:
-                    print(f"Error during cleanup: {e}")
+                    logger.exception(f"Error during cleanup: {e}")

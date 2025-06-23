@@ -4,6 +4,8 @@ import threading
 import time
 from typing import Dict, Optional, Callable, List, Tuple
 import pygame
+import logging
+logger = logging.getLogger(__name__)
 
 class Joystick:
     """
@@ -36,12 +38,12 @@ class Joystick:
             self.joystick.init()
             
             if self.debug:
-                print(f"Initialized joystick: {self.joystick.get_name()}")
-                print(f"Number of axes: {self.joystick.get_numaxes()}")
-                print(f"Number of buttons: {self.joystick.get_numbuttons()}")
+                logger.info(f"Initialized joystick: {self.joystick.get_name()}")
+                logger.info(f"Number of axes: {self.joystick.get_numaxes()}")
+                logger.info(f"Number of buttons: {self.joystick.get_numbuttons()}")
                 
         except Exception as e:
-            print(f"Failed to initialize joystick: {e}")
+            logger.exception(f"Failed to initialize joystick: {e}")
             self.joystick = None
             
         # Input state
@@ -61,7 +63,7 @@ class Joystick:
     def start(self):
         """Start processing joystick input"""
         if not self.joystick:
-            print("No joystick available")
+            logger.warning("No joystick available")
             return
             
         if not self.is_running:
@@ -69,7 +71,7 @@ class Joystick:
             self.thread = threading.Thread(target=self._process_input, daemon=True)
             self.thread.start()
             if self.debug:
-                print("Started joystick processing")
+                logger.info("Started joystick processing")
                 
     def stop(self):
         """Stop processing joystick input"""
@@ -77,7 +79,7 @@ class Joystick:
         if self.thread:
             self.thread.join()
             if self.debug:
-                print("Stopped joystick processing")
+                logger.info("Stopped joystick processing")
                 
     def add_axis_handler(self, 
                         axis: int, 
@@ -164,4 +166,4 @@ class Joystick:
         self.stop()
         pygame.quit()
         if self.debug:
-            print("Joystick cleanup completed")
+            logger.info("Joystick cleanup completed")

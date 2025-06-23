@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+import logging
 import threading
 from openai import OpenAI
 from dotenv import load_dotenv
+from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -29,9 +33,9 @@ class ConversationModule:
         if api_key:
             self.client = OpenAI(api_key=api_key)
             if self.debug:
-                print("OpenAI initialized")
+                logger.info("OpenAI initialized")
         else:
-            print("Warning: No OpenAI API key provided")
+            logger.warning("Warning: No OpenAI API key provided")
             self.client = None
             
         # Conversation state
@@ -39,8 +43,8 @@ class ConversationModule:
             {
                 "role": "system",
                 "content": "You are Robbie the Robot, a robot who is being built by "
-                          "Heidi and Heidi's daddy. Your responses should be short, "
-                          "kind and helpful, and suitable for a second-grade student."
+                          "Heidi and Heidi's daddy. Your responses should be mostly short, "
+                          "kind, off-kilter, and suitable for a 6 year old. No sound effects."
             }
         ]
         self.max_history = 10
@@ -99,7 +103,7 @@ class ConversationModule:
                 return response_text
                 
             except Exception as e:
-                print(f"Error in AI processing: {e}")
+                logger.error(f"Error in AI processing: {e}")
                 return f"Error: {str(e)}"
                 
     def set_system_message(self, message: str) -> None:

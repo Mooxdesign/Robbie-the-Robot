@@ -4,8 +4,11 @@ import threading
 import queue
 import numpy as np
 import whisper
+import logging
 from typing import Optional, Callable, Dict, List
 import time
+
+logger = logging.getLogger(__name__)
 
 from .audio import AudioModule
 
@@ -36,7 +39,7 @@ class SpeechToTextModule:
     
     SAMPLE_RATE = 16000
     CHUNK_SIZE = 2048
-    MIN_AUDIO_CHUNKS = 50  # ~2 seconds at 44100Hz, robust buffering
+    MIN_AUDIO_CHUNKS = 5  # Lowered for debugging: triggers processing quickly - 50
     # Suggestion: try values between 5 and 20 depending on environment and chunk size.
     # If transcriptions are too short, decrease this. If too long/wrong, increase.
     
@@ -46,6 +49,8 @@ class SpeechToTextModule:
                  language: str = "en",
                  debug: bool = False,
                  whisper_model=None):
+        self._lock = threading.RLock()
+        self.transcription_in_progress = False
         """
         Initialize speech-to-text module
         
@@ -56,7 +61,9 @@ class SpeechToTextModule:
         """
         self.debug = debug
         self.language = language
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        if self.debug:
+            logger.debug("[SpeechToTextModule] Using threading.RLock for _lock (reentrant)")
         
         # Use provided audio module or create new one
         self.audio = audio_module if audio_module else AudioModule(debug=debug)
@@ -67,14 +74,14 @@ class SpeechToTextModule:
         if whisper_model is not None:
             self.whisper = whisper_model
             if self.debug:
-                print("Injected Whisper model (test/mock)")
+                logger.info("Injected Whisper model (test/mock)")
         else:
             try:
                 self.whisper = whisper.load_model("base")
                 if self.debug:
-                    print("Whisper model loaded")
+                    logger.info("Whisper model loaded")
             except Exception as e:
-                print(f"Failed to initialize Whisper: {e}")
+                logger.error(f"Failed to initialize Whisper: {e}")
                 self.whisper = None
                 return
             
@@ -87,7 +94,7 @@ class SpeechToTextModule:
         self._timeout_callbacks: List[Callable[[], None]] = []
         self._silence_timeout = 20.0  # Seconds of silence before full standby/idle timeout
         self._phrase_timeout = 1    # Seconds of silence to trigger phrase segmentation (endpointing)
-        self._audio_threshold = -70  # dB threshold for speech detection (temporarily lowered for debug)
+        self._audio_threshold = -50  # dB threshold for speech detection (temporarily lowered for debug)
         self._buffering_active = False  # Only buffer after speech is detected
         # Pre-buffer: rolling buffer to capture audio before speech is detected
         from collections import deque
@@ -97,7 +104,7 @@ class SpeechToTextModule:
         self._pre_buffer = deque(maxlen=pre_buffer_chunks)
         # Suggestion: try values between -50 and -30 for typical rooms. Too low = more noise; too high = missed speech.
         if self.debug:
-            print(f"[SpeechToTextModule] Audio threshold set to {self._audio_threshold} dB")
+            logger.debug(f"[SpeechToTextModule] Audio threshold set to {self._audio_threshold} dB")
         self._stream_id = None
         # Always expose audio_callback for tests
         self.audio_callback = getattr(self, '_test_audio_callback', self._audio_callback)
@@ -109,47 +116,63 @@ class SpeechToTextModule:
     def add_timeout_callback(self, callback: Callable[[], None]):
         """Add callback for silence timeout"""
         self._timeout_callbacks.append(callback)
+
+    def _set_transcription_in_progress(self, value: bool):
+        with self._lock:
+            self.transcription_in_progress = value
+            logger.debug(f"[SpeechToTextModule] transcription_in_progress set to {value}")
+
+    def is_transcription_in_progress(self):
+        with self._lock:
+            return self.transcription_in_progress
+
+    def safe_notify_timeout_callbacks(self):
+        with self._lock:
+            if self.transcription_in_progress:
+                logger.info("[SpeechToTextModule] Silence timeout ignored: transcription in progress")
+                return
+            for callback in self._timeout_callbacks:
+                try:
+                    callback()
+                except Exception as e:
+                    logger.error(f"[SpeechToTextModule] Error in timeout callback: {e}")
         
     def start_listening(self):
         """Start listening and converting speech to text"""
-        print("[SpeechToTextModule] start_listening called")
-        if self.is_listening:
+        with self._lock:
+            if self.is_listening:
+                if self.debug:
+                    logger.warning("[SpeechToTextModule] Already listening!")
+                return
+            self.is_listening = True
+            self._audio_buffer = []
+            self._last_audio = time.time()
+            self.transcription_in_progress = False
             if self.debug:
-                print("Cannot start speech recognition: already listening")
-            return
-        # Reset state
-        if self._stream_id is not None:
-            try:
-                self.audio.close_stream(self._stream_id)
-                if self.debug:
-                    print(f"Closed previous audio stream (id={self._stream_id})")
-            except Exception as e:
-                if self.debug:
-                    print(f"Error closing existing stream: {e}")
-            self._stream_id = None
+                logger.info("[SpeechToTextModule] start_listening called")
+            # Start audio stream and processing thread
+            self._process_thread = threading.Thread(target=self._process_audio, daemon=True)
+            self._process_thread.start()
+        
         # Detect device sample rate
         self.device_sample_rate = None
         try:
             info = self.audio.get_device_info()
             if info and 'defaultSampleRate' in info:
                 self.device_sample_rate = int(info['defaultSampleRate'])
-                print(f"[SpeechToTextModule] Detected device sample rate: {self.device_sample_rate}")
+                logger.info(f"[SpeechToTextModule] Detected device sample rate: {self.device_sample_rate}")
             else:
                 self.device_sample_rate = self.SAMPLE_RATE
         except Exception as e:
-            print(f"[SpeechToTextModule] Could not detect device sample rate: {e}")
+            logger.error(f"[SpeechToTextModule] Could not detect device sample rate: {e}")
             self.device_sample_rate = self.SAMPLE_RATE
         # Stop any existing processing thread
         if self._process_thread and self._process_thread.is_alive():
             if self.debug:
-                print("Waiting for processing thread to finish")
+                logger.info("Waiting for processing thread to finish")
             self._process_thread.join(timeout=1)
-        self.is_listening = True
-        self._audio_buffer = []
-        self._last_audio = time.time()
-        self._process_thread = None
         try:
-            print(f"[SpeechToTextModule] Creating audio stream with sample_rate={self.device_sample_rate}, chunk_size={self.CHUNK_SIZE}")
+            logger.info(f"[SpeechToTextModule] Creating audio stream with sample_rate={self.device_sample_rate}, chunk_size={self.CHUNK_SIZE}")
             self._stream_id = self.audio.create_stream(
                 callback=self._audio_callback,
                 rate=self.device_sample_rate,
@@ -158,11 +181,11 @@ class SpeechToTextModule:
                 channels=1
             )
             if self.debug:
-                print("Starting speech recognition")
+                logger.info("Starting speech recognition")
             self.audio.start_stream(self._stream_id)
-            print(f"[SpeechToTextModule] Audio stream started (id={self._stream_id})")
+            logger.info(f"[SpeechToTextModule] Audio stream started (id={self._stream_id})")
         except Exception as e:
-            print(f"Failed to start speech recognition: {e}")
+            logger.error(f"Failed to start speech recognition: {e}")
             self.is_listening = False
             if hasattr(self, '_stream_id'):
                 self._stream_id = None
@@ -170,46 +193,70 @@ class SpeechToTextModule:
                 
     def stop_listening(self):
         """Stop listening for speech"""
-        # Always try to clean up stream regardless of state
-        if not self.is_listening and not hasattr(self, '_stream_id'):
-            if self.debug:
-                print("Cannot stop speech recognition: not listening")
-            return
-        
-        # Only trigger timeout callbacks if we were actually listening
-        if self.is_listening:
-            self.is_listening = False
-            for callback in getattr(self, '_timeout_callbacks', []):
-                try:
-                    callback()
-                except Exception as e:
+        logger.debug("[SpeechToTextModule] stop_listening: ENTER")
+        try:
+            with self._lock:
+                logger.debug("[SpeechToTextModule] stop_listening: acquired _lock")
+                if not self.is_listening:
                     if self.debug:
-                        print(f"Error in timeout callback: {e}")
-        else:
-            self.is_listening = False
-        
+                        logger.warning("[SpeechToTextModule] Not listening!")
+                    logger.debug("[SpeechToTextModule] stop_listening: EXIT (was not listening)")
+                    return
+                self.is_listening = False
+                self.transcription_in_progress = False
+                if self.debug:
+                    logger.info("[SpeechToTextModule] stop_listening called")
+                stream_id = getattr(self, '_stream_id', None)
+                stream_info = None
+                logger.debug(f"[SpeechToTextModule] stop_listening: stream_id={stream_id}")
+                if hasattr(self.audio, 'get_stream_info') and stream_id is not None:
+                    logger.debug("[SpeechToTextModule] stop_listening: about to get stream_info")
+                    stream_info = self.audio.get_stream_info(stream_id)
+                    logger.debug(f"[SpeechToTextModule] stop_listening: got stream_info={stream_info}")
+                if hasattr(self.audio, 'close_stream') and stream_id is not None:
+                    logger.debug("[SpeechToTextModule] stop_listening: about to close_stream")
+                    self.audio.close_stream(stream_id)
+                    logger.debug("[SpeechToTextModule] stop_listening: closed stream")
+                self._stream_id = None
+                logger.debug("[SpeechToTextModule] stop_listening: set _stream_id to None")
+            logger.debug("[SpeechToTextModule] stop_listening: EXIT (success)")
+        except Exception as e:
+            logger.error(f"[SpeechToTextModule] stop_listening: Exception: {e}", exc_info=True)
+            stream_type = stream_info["type"] if stream_info else "unknown"
+            device_index = stream_info["device_index"] if stream_info else None
+            if self.debug:
+                logger.info(f"[SpeechToTextModule] stop_listening: stream_id={stream_id}, type={stream_type}, device={device_index}")
+            if stream_type == "input":
+                if hasattr(self.audio, 'stop_stream') and stream_id is not None:
+                    try:
+                        self.audio.stop_stream(stream_id)
+                    except Exception as e:
+                        if self.debug:
+                            logger.error(f"[SpeechToTextModule] Error stopping stream: {e}")
+                if hasattr(self.audio, 'close_stream') and stream_id is not None:
+                    try:
+                        self.audio.close_stream(stream_id)
+                    except Exception as e:
+                        if self.debug:
+                            logger.error(f"[SpeechToTextModule] Error closing stream: {e}")
+                self._stream_id = None
+                if self.debug:
+                    logger.info("[SpeechToTextModule] Listening stopped and input stream closed.")
+            else:
+                if self.debug:
+                    logger.info(f"[SpeechToTextModule] Not closing stream_id={stream_id} because type is not 'input' (type={stream_type})")
         # Process any remaining audio before stopping
         if self._audio_buffer and len(self._audio_buffer) >= self.MIN_AUDIO_CHUNKS:
             if self.debug:
-                print("Processing remaining audio before stopping")
+                logger.info("Processing remaining audio before stopping")
             self._process_audio()
         self._audio_buffer = []  # Ensure buffer is cleared!
-        # Stop audio stream through AudioModule
-        if getattr(self, '_stream_id', None) is not None:
-            try:
-                if self.debug:
-                    print(f"[stop_listening] Calling close_stream for stream_id={self._stream_id}, is_listening={self.is_listening}")
-                self.audio.close_stream(self._stream_id)
-                if self.debug:
-                    print("Closed speech recognition stream")
-            except Exception as e:
-                if self.debug:
-                    print(f"Error stopping speech recognition stream: {e}")
-            self._stream_id = None
+        # Notify timeout callbacks
+        self.safe_notify_timeout_callbacks()
         
         # Clear state
         self._audio_buffer = []
-        self._last_audio = 0
+        # self._last_audio = 0
         
         import threading
         if self._process_thread and self._process_thread != threading.current_thread():
@@ -224,11 +271,11 @@ class SpeechToTextModule:
                 if self.debug:
                     now = time.time()
                     if not hasattr(self, '_last_not_listening_log') or now - self._last_not_listening_log > 2:
-                        print("Audio callback called but not listening (ndarray path)")
+                        logger.warning("Audio callback called but not listening (ndarray path)")
                         self._last_not_listening_log = now
                 return (None, 0)
             self._audio_buffer.append(in_data)
-            print(f"[SpeechToTextModule] Audio buffer appended (ndarray path), buffer size: {len(self._audio_buffer)}")
+            logger.debug(f"[SpeechToTextModule] Audio buffer appended (ndarray path), buffer size: {len(self._audio_buffer)}")
             self._process_audio()
             return (None, 0)
 
@@ -236,7 +283,7 @@ class SpeechToTextModule:
             if self.debug:
                 now = time.time()
                 if not hasattr(self, '_last_not_listening_log') or now - self._last_not_listening_log > 2:
-                    print("Audio callback called but not listening")
+                    logger.warning("Audio callback called but not listening")
                     self._last_not_listening_log = now
             return (None, 0)  # Continue
         try:
@@ -247,7 +294,7 @@ class SpeechToTextModule:
             if self.debug:
                 now = time.time()
                 if not hasattr(self, '_last_debug_samples_log') or now - self._last_debug_samples_log > 2:
-                    print(f"[DEBUG] First 10 samples (float32): {audio_data[:10]}")
+                    # logger.debug(f"[DEBUG] First 10 samples (float32): {audio_data[:10]}")
                     self._last_debug_samples_log = now
             # print(f"[SpeechToTextModule] Received {len(audio_data)} samples in audio callback")
             # Calculate audio level in dB
@@ -255,7 +302,7 @@ class SpeechToTextModule:
                 rms = np.sqrt(np.mean(audio_data**2))
                 db = 20 * np.log10(rms) if rms > 0 else -100
                 msg = (f"[DEBUG] rms={rms:.5f}, max={np.max(np.abs(audio_data)):.5f}, db={db:.1f}")
-                print(msg.ljust(100), end='\r', flush=True)
+                # print(msg.ljust(100), end='\r', flush=True)
                 # print(f"[DEBUG] rms={rms:.5f}, max={np.max(np.abs(audio_data)):.5f}, db={db:.1f}")
 
                 # print(f"\r[SpeechToTextModule] Audio dB: {db:.1f}, threshold: {self._audio_threshold}    ", end='', flush=True)
@@ -272,18 +319,21 @@ class SpeechToTextModule:
                             self._last_audio = time.time()
                             # Start phrase buffer with pre-buffered audio
                             self._audio_buffer = list(self._pre_buffer)
-                            print(f"[SpeechToTextModule] Speech detected, starting buffer with pre-buffer ({len(self._pre_buffer)} chunks)")
+                            logger.info(f"[SpeechToTextModule] Speech detected, starting buffer with pre-buffer ({len(self._pre_buffer)} chunks)")
                             self._audio_buffer.append(audio_data)
                     else:
                         # Buffer all audio once speech started
                         self._audio_buffer.append(audio_data)
+                        # logger.debug(f"[SpeechToTextModule] Buffering audio (buffer size: {len(self._audio_buffer)})")
+
+                        # logger.debug(f"[SpeechToTextModule] Audio dB: {db:.1f}, threshold: {self._audio_threshold}")
                         if db > self._audio_threshold:
                             self._last_audio = time.time()
                         # Print buffer duration for diagnostics
                         duration_sec = len(self._audio_buffer) * self.CHUNK_SIZE / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
                         elapsed = time.time() - self._last_audio
                         msg = f"[DEBUG] elapsed={elapsed:.2f}, phrase_timeout={self._phrase_timeout}, db={db:.1f}, buffering_active={self._buffering_active}"
-                        print(msg.ljust(100), end='\r', flush=True)
+                        # print(msg.ljust(100), end='\r', flush=True)
             # Silence endpointing logic: process phrase if silence detected
             elapsed = time.time() - self._last_audio
             # Phrase endpointing: process phrase after short silence
@@ -296,53 +346,56 @@ class SpeechToTextModule:
                 # linear = 10 ** (dB / 20)
                 linear_threshold = 10 ** (self._audio_threshold / 20)
                 max_amplitude = np.max(np.abs(audio_concat))
-                if self.debug:
-                    print(f"[DEBUG] Silence check: max_amplitude={max_amplitude:.5f}, linear_threshold={linear_threshold:.5f}, dB_threshold={self._audio_threshold}")
+
                 if max_amplitude > linear_threshold:
-                    print(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, processing phrase.")
+                    if self.debug:
+                        msg = f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, processing phrase."
+                        logger.info(msg)
                     if not getattr(self, '_process_thread', None) or not self._process_thread.is_alive():
+                        logger.debug(f"[SpeechToTextModule] Starting _process_audio thread (buffer size: {len(self._audio_buffer)})")
                         self._process_thread = threading.Thread(target=self._process_audio)
                         self._process_thread.start()
                     self._buffering_active = False  # Reset to waiting for speech
                     # Clear pre-buffer after phrase
                     self._pre_buffer.clear()
                 else:
-                    # Buffer is only silence, clear and reset
-                    print(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, but buffer is silent. Clearing buffer. (max_amplitude={max_amplitude:.5f}, threshold={linear_threshold:.5f}, dB={self._audio_threshold})")
+                    if self.debug:
+                        # Buffer is only silence, clear and reset
+                        logger.info(f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, but buffer is silent. Clearing buffer. (max_amplitude={max_amplitude:.5f}, threshold={linear_threshold:.5f}, dB={self._audio_threshold})")
                     with self._lock:
                         self._audio_buffer = []
                     self._last_audio = time.time()
                     self._buffering_active = False
             # Standby/idle timeout logic (optional):
             if elapsed > self._silence_timeout:
-                print(f"[SpeechToTextModule] Standby timeout reached after {elapsed:.2f}s, stopping listening.")
+                logger.warning(f"[SpeechToTextModule] Standby timeout reached after {elapsed:.2f}s, stopping listening.")
                 if self.is_listening:
                     self.stop_listening()
                 return (None, 0)
 
         except Exception as e:
-            print(f"[SpeechToTextModule] Error processing audio: {e}")
+            logger.error(f"[SpeechToTextModule] Error processing audio: {e}")
         return (None, 0)  # Continue
 
     def _process_audio(self):
         with self._lock:
             buffer_len = len(self._audio_buffer)
-        print(f"[SpeechToTextModule] _process_audio called (buffer size: {buffer_len})")
+        logger.debug(f"[SpeechToTextModule] _process_audio called (buffer size: {buffer_len})")
         if not self.is_listening:
             if self.debug:
-                print("[_process_audio] Called while not listening, skipping.")
+                logger.warning("[_process_audio] Called while not listening, skipping.")
             with self._lock:
                 self._audio_buffer = []
             return
         if not self.whisper:
-            print("[SpeechToTextModule] Whisper model not initialized!")
+            logger.error("[SpeechToTextModule] Whisper model not initialized!")
             return
         import threading as _threading
         try:
             # For test compatibility: process if buffer has any audio
             with self._lock:
                 if len(self._audio_buffer) == 0:
-                    print(f"[{_threading.current_thread().name}] No audio buffer to process.")
+                    logger.warning(f"[{_threading.current_thread().name}] No audio buffer to process.")
                     return
                 # Convert buffer to numpy array
                 audio_data = np.concatenate(self._audio_buffer)
@@ -350,25 +403,25 @@ class SpeechToTextModule:
 
             # Ensure mono (if multi-channel)
             if audio_data.ndim > 1:
-                print(f"[DEBUG] Converting multi-channel ({audio_data.shape}) audio to mono")
+                logger.debug(f"[DEBUG] Converting multi-channel ({audio_data.shape}) audio to mono")
                 audio_data = np.mean(audio_data, axis=1)
 
             # Ensure float32 in [-1, 1]
             if audio_data.dtype == np.int16:
-                print("[DEBUG] Converting int16 to float32 [-1, 1]")
+                logger.debug("[DEBUG] Converting int16 to float32 [-1, 1]")
                 audio_data = audio_data.astype(np.float32) / 32768.0
             elif audio_data.dtype == np.float32:
                 # Check if it's already in [-1, 1]
                 if np.max(np.abs(audio_data)) > 1.01:
-                    print("[WARNING] Float32 audio not in [-1, 1], normalizing")
+                    logger.warning("[WARNING] Float32 audio not in [-1, 1], normalizing")
                     audio_data = audio_data / np.max(np.abs(audio_data))
 
             # Diagnostics: print buffer stats
             duration_sec = len(audio_data) / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
-            print(f"[{_threading.current_thread().name}] Audio buffer stats: len={len(audio_data)}, duration={duration_sec:.3f}s, dtype={audio_data.dtype}, min={np.min(audio_data):.4f}, max={np.max(audio_data):.4f}, mean={np.mean(audio_data):.4f}")
+            logger.debug(f"[{_threading.current_thread().name}] Audio buffer stats: len={len(audio_data)}, duration={duration_sec:.3f}s, dtype={audio_data.dtype}, min={np.min(audio_data):.4f}, max={np.max(audio_data):.4f}, mean={np.mean(audio_data):.4f}")
             # Safeguard: skip if too short
             if duration_sec < 0.5:
-                print(f"[WARNING] Audio buffer too short ({duration_sec:.3f}s), skipping WAV write and transcription.")
+                logger.warning(f"[WARNING] Audio buffer too short ({duration_sec:.3f}s), skipping WAV write and transcription.")
                 self._audio_buffer = []
                 return
             # Resample if needed
@@ -378,10 +431,10 @@ class SpeechToTextModule:
                     import scipy.signal
                     num_samples = int(duration_sec * target_rate)
                     audio_resampled = scipy.signal.resample(audio_data, num_samples)
-                    print(f"[SpeechToTextModule] Resampled audio from {self.device_sample_rate} Hz to {target_rate} Hz (len {len(audio_data)} -> {len(audio_resampled)})")
+                    logger.info(f"[SpeechToTextModule] Resampled audio from {self.device_sample_rate} Hz to {target_rate} Hz (len {len(audio_data)} -> {len(audio_resampled)})")
                     audio_data = audio_resampled
                 except Exception as e:
-                    print(f"[SpeechToTextModule] Resample error: {e}")
+                    logger.error(f"[SpeechToTextModule] Resample error: {e}")
             # Save to WAV for offline listening (int16 for easy playback)
             try:
                 import wave
@@ -393,43 +446,51 @@ class SpeechToTextModule:
                     wf.setsampwidth(2)  # int16 = 2 bytes
                     wf.setframerate(target_rate)
                     wf.writeframes(audio_int16.tobytes())
-                print(f"[DEBUG] Saved audio buffer to {wav_path}")
+                logger.debug(f"[DEBUG] Saved audio buffer to {wav_path}")
             except Exception as e:
-                print(f"[DEBUG] Failed to save debug WAV: {e}")
+                logger.error(f"[DEBUG] Failed to save debug WAV: {e}")
 
             # Ensure Whisper input is float32 in [-1, 1]
             if audio_data.dtype != np.float32:
                 audio_data = audio_data.astype(np.float32)
             audio_data = np.clip(audio_data, -1.0, 1.0)
 
-            print(f"[{_threading.current_thread().name}] Processing {len(audio_data)} samples.")
+            logger.debug(f"[{_threading.current_thread().name}] Processing {len(audio_data)} samples.")
             # Transcribe
-            print(f"[{_threading.current_thread().name}] Transcribing audio...")
-            result = self.whisper.transcribe(audio_data, language=self.language)
-            text = result["text"]
-            print(f"[{_threading.current_thread().name}] Whisper transcription result: '{text}'")
-            # Call command callback if text matches a registered command
-            if hasattr(self, 'command_callbacks') and isinstance(self.command_callbacks, dict):
-                cb = self.command_callbacks.get(text)
-                if cb:
+            logger.info(f"[{_threading.current_thread().name}] Transcribing audio... (buffer len: {len(self._audio_buffer)})")
+            try:
+                result = self.whisper.transcribe(audio_data, language=self.language)
+                text = result["text"]
+                logger.info(f"[{_threading.current_thread().name}] Whisper transcription result: '{text}'")
+            except Exception as e:
+                logger.error(f"[{_threading.current_thread().name}] Whisper transcription error: {e}")
+                text = None
+            if text:
+                # Call command callback if text matches a registered command
+                if hasattr(self, 'command_callbacks') and isinstance(self.command_callbacks, dict):
+                    cb = self.command_callbacks.get(text)
+                    if cb:
+                        try:
+                            logger.debug(f"[{_threading.current_thread().name}] Invoking command callback for text: '{text}'")
+                            cb()
+                        except Exception as e:
+                            logger.error(f"[{_threading.current_thread().name}] Error in command callback: {e}")
+                # Notify transcription callbacks
+                logger.debug(f"[{_threading.current_thread().name}] Transcription callbacks: {getattr(self, '_transcription_callbacks', [])}")
+                for callback in getattr(self, '_transcription_callbacks', []):
                     try:
-                        print(f"[{_threading.current_thread().name}] Invoking command callback for text: '{text}'")
-                        cb()
+                        logger.debug(f"[{_threading.current_thread().name}] Invoking transcription callback with text: '{text}' (callback: {callback})")
+                        callback(text)
+                    except RuntimeError as e:
+                        logger.error(f"[{_threading.current_thread().name}] RuntimeError in transcription callback: {e}")
                     except Exception as e:
-                        print(f"[{_threading.current_thread().name}] Error in command callback: {e}")
-            # Notify transcription callbacks
-            print(f"[{_threading.current_thread().name}] Transcription callbacks: {getattr(self, '_transcription_callbacks', [])}")
-            for callback in getattr(self, '_transcription_callbacks', []):
-                try:
-                    print(f"[{_threading.current_thread().name}] Invoking transcription callback with text: '{text}' (callback: {callback})")
-                    callback(text)
-                except RuntimeError as e:
-                    print(f"[{_threading.current_thread().name}] RuntimeError in transcription callback: {e}")
-                except Exception as e:
-                    print(f"[{_threading.current_thread().name}] Error in transcription callback: {e}")
+                        logger.error(f"[{_threading.current_thread().name}] Error in transcription callback: {e}")
         except Exception as e:
-            print(f"[{_threading.current_thread().name}] Error processing audio: {e}")
+            logger.error(f"[{_threading.current_thread().name}] Error processing audio: {e}")
         finally:
+            with self._lock:
+                self.transcription_in_progress = False
+                logger.debug(f"[{_threading.current_thread().name}] transcription_in_progress set to False (audio processing done)")
             # Clear audio buffer
             self._audio_buffer = []
             
@@ -460,8 +521,8 @@ class SpeechToTextModule:
                     except Exception:
                         pass
                 if self.debug:
-                    print("Closed speech recognition stream")
+                    logger.info("Closed speech recognition stream")
             except Exception as e:
                 if self.debug:
-                    print(f"Error stopping speech recognition stream: {e}")
+                    logger.error(f"Error stopping speech recognition stream: {e}")
             self._stream_id = None

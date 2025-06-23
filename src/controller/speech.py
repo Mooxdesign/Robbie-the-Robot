@@ -2,6 +2,8 @@ from modules.wake_word import WakeWordModule
 from modules.speech_to_text import SpeechToTextModule
 from modules.voice import VoiceModule
 from .state import RobotState
+import logging
+logger = logging.getLogger(__name__)
 
 class SpeechController:
     def __init__(self, parent, audio_module, debug=False):
@@ -40,43 +42,76 @@ class SpeechController:
 
     def on_wake_word(self):
         if self.debug:
-            print(f"[SpeechController] Wake word detected (state: {self.parent._state})")
+            logger.info(f"[SpeechController] Wake word detected (state: {self.parent._state})")
         self.parent.wake_up()
 
     def on_transcription(self, text):
-        if not text:
-            return
-        self.parent._send_ws_command({"type": "update_transcription", "last_transcription": text})
-        if self.debug:
-            print(f"\nTranscribed: {text}")
-        if text.lower().strip() == "thanks robbie":
-            self.parent._return_to_standby()
-            return
-        self.parent._set_state(RobotState.PROCESSING)
-        response = self.parent.conversation.chat(text)
-        if response:
-            print(f"\nRobbie: {response}")
-            self.speech_to_text.stop_listening()
-            self.parent._set_state(RobotState.SPEAKING)
-            print(f"[SpeechController] About to call self.voice.say with: {response}")
-            self.voice.say(response, blocking=False)
-        else:
-            print("\nNo response from AI")
-            self.parent._set_state(RobotState.LISTENING)
+        try:
+            # Synchronize with speech_to_text lock and transcription_in_progress flag
+            with self.speech_to_text._lock:
+                self.speech_to_text.transcription_in_progress = False  # Mark as done
+                if not text:
+                    return
+                self.parent._send_ws_command({"type": "update_transcription", "last_transcription": text})
+                if self.debug:
+                    logger.info(f"Transcribed: {text}")
+                if text.lower().strip() == "thanks robbie":
+                    self.parent._return_to_standby()
+                    return
+                self.parent._set_state(RobotState.PROCESSING)
+                response = self.parent.conversation.chat(text)
+                if response:
+                    logger.info(f"Robbie: {response}")
+                    logger.info(f"[DEBUG] Type of response: {type(response)} Value: {repr(response)}")
+                    logger.debug("[DEBUG] About to attempt stop_listening and state change")
+                    try:
+                        self.speech_to_text.stop_listening()
+                        logger.info("[DEBUG] Called stop_listening()")
+                    except Exception as e:
+                        logger.error(f"[DEBUG] stop_listening() raised: {e}")
+                    try:
+                        self.parent._set_state(RobotState.SPEAKING)
+                        logger.info("[DEBUG] Called _set_state(SPEAKING)")
+                    except Exception as e:
+                        logger.error(f"[DEBUG] _set_state(SPEAKING) raised: {e}")
+                    try:
+                        logger.debug(f"[SpeechController] About to call self.voice.say with: {response}")
+                        self.voice.say(response, blocking=False)
+                        logger.debug(f"[SpeechController] self.voice.say call complete")
+                    except Exception as e:
+                        logger.error(f"[SpeechController] Error calling self.voice.say: {str(e)}")
+                else:
+                    logger.warning("No response from AI")
+                    self.parent._set_state(RobotState.LISTENING)
+        except Exception as e:
+            logger.exception(f"[SpeechController] Unhandled exception in on_transcription: {e}")
+            try:
+                logger.debug(f"[SpeechController] About to call self.voice.say with: {response}")
+                self.voice.say(response, blocking=False)
+                logger.debug(f"[SpeechController] self.voice.say call complete")
+            except Exception as e:
+                logger.error(f"[SpeechController] Error calling self.voice.say: {str(e)}")
+            else:
+                logger.warning("No response from AI")
+                self.parent._set_state(RobotState.LISTENING)
 
     def on_speech_complete(self):
         # Always start listening after speech completes, and set state to LISTENING
         if self.debug:
-            print("[on_speech_complete] Speech finished. Transitioning to LISTENING and starting speech-to-text.")
+            logger.info("[on_speech_complete] Speech finished. Transitioning to LISTENING and starting speech-to-text.")
         self.parent._set_state(RobotState.LISTENING)
         self.speech_to_text.start_listening()
         # Do NOT return to standby here. Standby should only be triggered by the silence timeout callback from SpeechToTextModule.
 
     def on_silence_timeout(self):
         # Called when silence timeout is triggered in SpeechToTextModule
-        if self.debug:
-            print("[on_silence_timeout] Silence timeout occurred. Returning to STANDBY.")
-        self.parent._return_to_standby()
+        with self.speech_to_text._lock:
+            if self.speech_to_text.transcription_in_progress:
+                logger.info("[SpeechController] Silence timeout ignored: transcription in progress")
+                return
+            if self.debug:
+                logger.info("[on_silence_timeout] Silence timeout occurred. Returning to STANDBY.")
+            self.parent._return_to_standby()
 
     def cleanup(self):
         self.wake_word.cleanup()

@@ -14,14 +14,44 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 from config import Config
 from utils.hardware import LED_AVAILABLE
 
+import logging
+logger = logging.getLogger(__name__)
+
 if LED_AVAILABLE:
     from unicornhatmini import UnicornHATMini
-    print("Unicorn HAT Mini detected")
+    logger.info("Unicorn HAT Mini detected")
 else:
-    print("No LED matrix detected - running in simulation mode")
+    logger.info("No LED matrix detected - running in simulation mode")
     from simulation.hardware import SimulatedUnicornHATMini as UnicornHATMini
 
 class LedsModule:
+    def visualize_kitt_pulse(self, volume: float):
+        """
+        Visualize a KITT-style red pulse from the center, fading outwards, with brightness based on volume.
+        Args:
+            volume (float): Normalized volume (0.0 = off, 1.0 = max)
+        """
+        with self._lock:
+            # Early exit for silence
+            if volume <= 0.01:
+                self.buffer.fill(0)
+                if self.unicorn:
+                    for y in range(self.height):
+                        for x in range(self.width):
+                            self.unicorn.set_pixel(x, y, 0, 0, 0)
+                self.show()
+                return
+            # Center columns for 8x4: 3 and 4
+            falloff = [0.125, 0.25, 0.5, 1.0, 1.0, 0.5, 0.25, 0.125]  # per column
+            for y in range(self.height):
+                for x in range(self.width):
+                    brightness = falloff[x] * volume
+                    r = int(255 * brightness)
+                    self.buffer[y, x] = [r, 0, 0]
+                    if self.unicorn:
+                        self.unicorn.set_pixel(x, y, r, 0, 0)
+            self.show()
+
     """
     Controls the Unicorn pHAT LED matrix with various patterns and animations
     """
@@ -45,9 +75,9 @@ class LedsModule:
             self.unicorn = UnicornHATMini()
             self.unicorn.set_brightness(brightness)
             if self.debug:
-                print("LED matrix initialized")
+                logger.info("LED matrix initialized")
         except Exception as e:
-            print(f"Failed to initialize LED matrix: {e}")
+            logger.error(f"Failed to initialize LED matrix: {e}")
             self.unicorn = None
             
         # Animation state
@@ -56,8 +86,7 @@ class LedsModule:
         self.is_animating = False
         
         # Pattern buffers
-        self.buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        self.prev_buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        self.buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)  # (rows, cols, rgb)
         
         # Audio visualization state
         self.max_volume = float('-inf')
@@ -125,7 +154,7 @@ class LedsModule:
             )
             self.animation_thread.start()
             if self.debug:
-                print(f"Started animation: {animation_name}")
+                logger.info(f"Started animation: {animation_name}")
     
     def stop_animation(self):
         """Stop current animation"""
@@ -134,7 +163,7 @@ class LedsModule:
             self.animation_thread.join(timeout=1)
             self.animation_thread = None
         if self.debug:
-            print("Animation stopped")
+            logger.info("Animation stopped")
     
     def _rainbow_animation(self, speed: float = 0.01):
         """Rainbow color cycle animation"""
@@ -312,7 +341,7 @@ class LedsModule:
         self.animation_thread = threading.Thread(target=run_pulse, daemon=True)
         self.animation_thread.start()
         if self.debug:
-            print(f"Started pulse animation: color={color}, duration={duration}")
+            logger.info(f"Started pulse animation: color={color}, duration={duration}")
 
     def start_rainbow(self, duration: float = 1.0):
         """Start a rainbow animation for the specified duration (seconds)."""
@@ -327,7 +356,7 @@ class LedsModule:
         self.animation_thread = threading.Thread(target=run_rainbow, daemon=True)
         self.animation_thread.start()
         if self.debug:
-            print(f"Started rainbow animation: duration={duration}")
+            logger.info(f"Started rainbow animation: duration={duration}")
 
     def set_brightness(self, value: float):
         """Set the brightness of the LED matrix."""
@@ -338,10 +367,10 @@ class LedsModule:
                     r, g, b = self.requested_color
                     self.set_color(r, g, b)
                 if self.debug:
-                    print(f"LED brightness set to {value}")
+                    logger.info(f"LED brightness set to {value}")
             except Exception as e:
                 if self.debug:
-                    print(f"Failed to set brightness: {e}")
+                    logger.error(f"Failed to set brightness: {e}")
 
     def set_color(self, r: int, g: int, b: int):
         """Set all LEDs to the specified color (with validation)."""
@@ -360,4 +389,4 @@ class LedsModule:
         self.stop_animation()
         self.clear()
         if self.debug:
-            print("LED cleanup completed")
+            logger.info("LED cleanup completed")

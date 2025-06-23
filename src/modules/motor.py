@@ -5,6 +5,9 @@ import os
 import time
 import threading
 from typing import Optional, Dict, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add src directory to Python path
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -16,9 +19,9 @@ if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
     import board
     from adafruit_motorkit import MotorKit
     from adafruit_servokit import ServoKit
-    print("Motor/servo hardware detected")
+    logger.info("Motor/servo hardware detected")
 else:
-    print("No motor/servo hardware detected - running in simulation mode")
+    logger.info("No motor/servo hardware detected - running in simulation mode")
     from simulation.hardware import (
         SimulatedMotorKit as MotorKit,
         SimulatedServoKit as ServoKit
@@ -62,10 +65,10 @@ class MotorModule:
                 self.servo_kit = ServoKit()
                 
             if self.debug:
-                print("Motor controller initialized")
+                logger.info("Motor controller initialized")
                 
         except Exception as e:
-            print(f"Failed to initialize motor controller: {e}")
+            logger.error(f"Failed to initialize motor controller: {e}")
             self.motor_kit = None
             self.servo_kit = None
             

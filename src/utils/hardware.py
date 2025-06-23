@@ -1,10 +1,14 @@
 import os
 import platform
 import subprocess
+import logging
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
 
 def is_raspberry_pi() -> bool:
     """Check if running on Raspberry Pi"""
+    logger.info("Hardware detected: Running on Raspberry Pi!")
     return platform.machine().startswith('arm') or platform.machine().startswith('aarch')
 
 def check_i2c_device(address: int) -> bool:
@@ -20,6 +24,7 @@ def check_i2c_device(address: int) -> bool:
     try:
         # Only attempt I2C detection on Raspberry Pi
         if not is_raspberry_pi():
+            logger.info("No hardware detected: Running in simulation mode.")
             return False
             
         # Use i2cdetect to check for device
@@ -32,7 +37,7 @@ def check_i2c_device(address: int) -> bool:
         return hex_addr in result.stdout
         
     except Exception as e:
-        print(f"Failed to check I2C device: {e}")
+        logger.error(f"Failed to check I2C device: {e}")
         return False
 
 def check_camera() -> bool:
@@ -45,13 +50,14 @@ def check_camera() -> bool:
     try:
         # Only attempt camera detection on Raspberry Pi
         if not is_raspberry_pi():
+            logger.info("No hardware detected: Running in simulation mode.")
             return False
             
         # Check if camera device exists
         return os.path.exists('/dev/video0')
         
     except Exception as e:
-        print(f"Failed to check camera: {e}")
+        logger.error(f"Failed to check camera: {e}")
         return False
 
 def check_unicorn_hat() -> bool:
@@ -64,13 +70,14 @@ def check_unicorn_hat() -> bool:
     try:
         # Unicorn HAT uses the SPI interface
         if not is_raspberry_pi():
+            logger.info("No hardware detected: Running in simulation mode.")
             return False
             
         # Check if SPI is enabled
         return os.path.exists('/dev/spidev0.0')
         
     except Exception as e:
-        print(f"Failed to check Unicorn HAT: {e}")
+        logger.error(f"Failed to check Unicorn HAT: {e}")
         return False
 
 def check_motor_controller() -> Tuple[bool, bool]:

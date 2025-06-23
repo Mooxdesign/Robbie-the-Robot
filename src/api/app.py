@@ -5,6 +5,7 @@ import json
 import asyncio
 from typing import Dict, Set
 import logging
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -68,7 +69,7 @@ def update_led_matrix_state(leds_module):
     with leds_module._lock:
         # Convert the numpy buffer (4,8,3) to a nested list for JSON serialization
         robot_state['led_matrix'] = leds_module.buffer.astype(int).tolist()
-        print(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']}")
+        logger.debug(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']}")
 
 @app.get("/api/status")
 async def get_status():
@@ -126,7 +127,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         leds = robot_instance.leds
                         # Fill the entire buffer with magenta
                         leds.buffer[:, :] = [255, 0, 255]
-                        print("[DEBUG] test_led: buffer shape:", leds.buffer.shape)
+                        logger.info("[DEBUG] test_led: buffer shape:", leds.buffer.shape)
                         leds.show()
                 elif cmd_type == "wake":
                     from controller.robot import robot_instance
@@ -154,17 +155,17 @@ async def handle_movement(command: Dict):
     direction = command.get("direction")
     speed = command.get("speed", 50)
     # TODO: Implement actual robot movement control
-    print(f"Moving robot: {direction} at speed {speed}")
+    logger.info(f"Moving robot: {direction} at speed {speed}")
 
 async def handle_configuration(command: Dict):
     """Handle robot configuration updates"""
     config = command.get("config", {})
     # TODO: Implement actual configuration updates
-    print(f"Updating configuration: {config}")
+    logger.info(f"Updating configuration: {config}")
 
 # Mount the static files (for the frontend)
 import os
 
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "web-interface", "dist"))
-print(f"Mounting static files from: {frontend_dist}")
+logger.info(f"Mounting static files from: {frontend_dist}")
 app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")

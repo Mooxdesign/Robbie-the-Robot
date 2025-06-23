@@ -5,7 +5,10 @@ import sys
 import time
 import threading
 import numpy as np
+import logging
 from typing import Dict, List, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 class RobotVisualizer:
     """Visualizes robot state in simulation mode"""
@@ -41,7 +44,7 @@ class RobotVisualizer:
         # Lock for thread safety
         self._lock = threading.Lock()
         
-        print("Robot visualizer initialized (simulation mode)")
+        logger.info("Robot visualizer initialized (simulation mode)")
             
     def set_audio_level(self, db_level: float):
         """Update audio level"""
@@ -55,13 +58,13 @@ class RobotVisualizer:
             # Print when setting all LEDs to same color (state change)
             target_color = np.array([r/255, g/255, b/255])
             if np.all(np.all(self.led_matrix == target_color, axis=2)):
-                print(f"LED Matrix: RGB({r}, {g}, {b})")
+                logger.info(f"LED Matrix: RGB({r}, {g}, {b})")
             
     def clear_leds(self):
         """Clear all LEDs"""
         with self._lock:
             self.led_matrix.fill(0)
-            print("LED Matrix: Cleared")
+            logger.info("LED Matrix: Cleared")
             
     def cleanup(self):
         """Clean up resources"""

@@ -6,6 +6,8 @@ import time
 import argparse
 import numpy as np
 from modules.vision import VisionModule
+import logging
+logger = logging.getLogger(__name__)
 
 def main():
     # Parse arguments
@@ -98,14 +100,14 @@ def main():
     vision.start()
     
     try:
-        print('Press q to quit...')
+        logger.info('Press q to quit...')
         while True:
             if cv2.waitKey(1) == ord('q'):
                 break
             time.sleep(0.01)
             
     except KeyboardInterrupt:
-        print('Interrupted by user')
+        logger.warning('Interrupted by user')
         
     finally:
         # Clean up

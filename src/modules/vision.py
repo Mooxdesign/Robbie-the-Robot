@@ -8,6 +8,9 @@ import threading
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 from queue import Queue
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add src directory to Python path
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,9 +20,9 @@ from utils.hardware import CAMERA_AVAILABLE
 
 if CAMERA_AVAILABLE:
     from picamera2 import Picamera2
-    print("Camera detected - using hardware camera")
+    logger.info("Camera detected - using hardware camera")
 else:
-    print("No camera detected - running in simulation mode")
+    logger.warning("No camera detected - running in simulation mode")
 
 class VideoStream:
     """
@@ -108,10 +111,10 @@ class VisionModule:
                 self.camera.set(cv2.CAP_PROP_FPS, self.framerate)
                 
             if self.debug:
-                print("Camera initialized")
+                logger.info("Camera initialized")
                 
         except Exception as e:
-            print(f"Failed to initialize camera: {e}")
+            logger.exception(f"Failed to initialize camera: {e}")
             self.camera = None
             
         # Vision processing state
@@ -138,7 +141,7 @@ class VisionModule:
                 self.processing_thread.start()
                 
                 if self.debug:
-                    print("Vision processing started")
+                    logger.info("Vision processing started")
                     
     def stop(self):
         """Stop vision processing"""
@@ -156,7 +159,7 @@ class VisionModule:
                 self.camera.release()
                 
         if self.debug:
-            print("Vision processing stopped")
+            logger.info("Vision processing stopped")
             
     def add_callback(self, callback):
         """Add callback for detected objects"""
@@ -221,10 +224,10 @@ class VisionModule:
                     try:
                         callback(frame, objects)
                     except Exception as e:
-                        print(f"Error in vision callback: {e}")
+                        logger.exception(f"Error in vision callback: {e}")
                         
             except Exception as e:
-                print(f"Error processing frame: {e}")
+                logger.exception(f"Error processing frame: {e}")
                 time.sleep(0.1)
                 
             # Maintain framerate

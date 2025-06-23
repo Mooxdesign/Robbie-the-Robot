@@ -60,7 +60,7 @@ ai:
   debug: true
 
 lights:
-  width: 1
+  width: 8
   height: 4
   max_brightness: 0.5
   update_rate: 30
