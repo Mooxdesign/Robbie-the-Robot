@@ -55,7 +55,9 @@ robot_state = {
     "input_audio_level_db": 0.0,  # Real-time audio input level (dB or normalized)
     "output_audio_level_db": 0.0,  # Real-time audio output level (dB or normalized)
     "last_transcription": "",  # Latest Whisper AI transcription
-    "led_matrix": []  # 8x4 RGB LED matrix state (list of lists)
+    "last_response": "",  # Latest AI response
+    "led_matrix": [],  # 8x4 RGB LED matrix state (list of lists)
+    "chat_history": []  # Full chat history: list of {sender, text}
 }
 
 # --- LED Matrix State Integration ---
@@ -121,6 +123,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     robot_state["last_transcription"] = chat_text
                     # Always set last_response to the AI response (or empty string if none)
                     robot_state["last_response"] = response if response else ""
+
+                    # Always update chat_history from conversation module
+                    if hasattr(robot_instance, "conversation"):
+                        robot_state["chat_history"] = robot_instance.conversation.get_chat_history()
+                        # Broadcast chat_history as a dedicated message
+                        import asyncio
+                        asyncio.create_task(manager.broadcast(json.dumps({
+                            "type": "chat_history",
+                            "chat_history": robot_state["chat_history"]
+                        })))
+
                 elif cmd_type == "test_led":
                     from controller.robot import robot_instance
                     if robot_instance and hasattr(robot_instance, "leds"):

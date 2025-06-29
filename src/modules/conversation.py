@@ -15,6 +15,16 @@ load_dotenv()
 from config import Config
 
 class ConversationModule:
+    def get_ui_chat_history(self):
+        # Convert OpenAI roles to 'user'/'robot' for the UI, skipping system messages
+        ui_history = []
+        for msg in self.conversation_history:
+            if msg['role'] == 'user':
+                ui_history.append({'sender': 'user', 'text': msg['content']})
+            elif msg['role'] == 'assistant':
+                ui_history.append({'sender': 'robot', 'text': msg['content']})
+        return ui_history
+
     """Conversation module for natural language processing and decision making"""
     
     def __init__(self, api_key: str = None, debug: bool = False):
@@ -71,6 +81,14 @@ class ConversationModule:
                     'role': 'user',
                     'content': text
                 })
+                # --- Broadcast chat history after user message ---
+                try:
+                    from api.app import robot_state, manager
+                    import asyncio, json
+                    robot_state["chat_history"] = self.get_ui_chat_history()
+                    asyncio.create_task(manager.broadcast(json.dumps(robot_state)))
+                except Exception as e:
+                    logger.debug(f"[ConversationModule] Could not broadcast after user message: {e}")
                 
                 # Trim history if needed while preserving system message
                 if len(self.conversation_history) > self.max_history:
@@ -99,6 +117,14 @@ class ConversationModule:
                     'role': 'assistant',
                     'content': response_text
                 })
+                # --- Broadcast chat history after assistant message ---
+                try:
+                    from api.app import robot_state, manager
+                    import asyncio, json
+                    robot_state["chat_history"] = self.get_ui_chat_history()
+                    asyncio.create_task(manager.broadcast(json.dumps(robot_state)))
+                except Exception as e:
+                    logger.debug(f"[ConversationModule] Could not broadcast after assistant message: {e}")
                 
                 return response_text
                 

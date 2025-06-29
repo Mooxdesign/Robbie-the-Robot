@@ -51,6 +51,9 @@ export const useRobotState = defineStore('robotState', () => {
     api.sendCommand({ type: 'set_pid_d', value })
   }
 
+  // --- Chat message history ---
+  const chatMessages = ref([])
+
   // This is the ONLY place state is mutated:
   function updateFromBackend(state: any) {
     // Defensive: update only if present in state
@@ -68,6 +71,10 @@ export const useRobotState = defineStore('robotState', () => {
     if (state.recent_activity !== undefined) recentActivity.value = state.recent_activity
     if (state.input_audio_level_db !== undefined) inputAudioLevelDb.value = state.input_audio_level_db
     if (state.output_audio_level_db !== undefined) outputAudioLevelDb.value = state.output_audio_level_db;
+    // NEW: Update chatMessages if present
+    if (Array.isArray(state.chat_history)) {
+      chatMessages.value = state.chat_history.slice()
+    }
     // ...add other fields as needed
   }
 
@@ -76,6 +83,7 @@ export const useRobotState = defineStore('robotState', () => {
     isConnected, robotState, batteryLevel, temperature, recentActivity,
     inputAudioLevelDb, outputAudioLevelDb,
     robotName, maxSpeed, sensorUpdateRate, sensorThreshold, pidP, pidI, pidD,
+    chatMessages,
     // Actions
     wakeRobot, setRobotName, setMaxSpeed, setSensorUpdateRate, setSensorThreshold, setPidP, setPidI, setPidD, updateFromBackend
   }

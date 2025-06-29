@@ -9,3 +9,7 @@ class ConversationController:
 
     def cleanup(self):
         self.conversation.cleanup()
+
+    def get_chat_history(self):
+        return self.conversation.get_ui_chat_history()
+
