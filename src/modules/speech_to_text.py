@@ -438,7 +438,7 @@ class SpeechToTextModule:
             # Save to WAV for offline listening (int16 for easy playback)
             try:
                 import wave
-                wav_path = "debug_transcription_input.wav"
+                wav_path = "last_transcription_input.wav"
                 # Scale back to int16 for debug WAV
                 audio_int16 = np.clip(audio_data * 32767.0, -32768, 32767).astype(np.int16)
                 with wave.open(wav_path, 'wb') as wf:
