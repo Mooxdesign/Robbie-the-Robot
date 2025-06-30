@@ -8,17 +8,21 @@ src_dir = base_dir
 sys.path.insert(0, modules_dir)
 sys.path.insert(0, src_dir)
 
-from conversation import ConversationModule
+from conversation import LlmModule
 
 
 def test_conversation_basic():
     """
-    Basic test for ConversationModule: instantiates and runs a simple exchange.
+    Basic test for LlmModule: instantiates and runs a simple exchange.
     """
-    conv = ConversationModule(debug=True)
+    conv = LlmModule(debug=True)
     # Example: simulate a conversation turn
     try:
-        response = conv.chat("Hello, robot!")
+        messages = [
+            {"role": "system", "content": "You are Robbie the Robot, a robot who is being built by Heidi and Heidi's daddy. Your responses should be mostly short, kind, off-kilter, and suitable for a 6 year old. No sound effects."},
+            {"role": "user", "content": "Hello, robot!"}
+        ]
+        response = conv.chat_llm(messages)
         print(f"Robot response: {response}")
     except Exception as e:
         print(f"Error during conversation test: {e}")
