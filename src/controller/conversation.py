@@ -1,5 +1,4 @@
 from modules.llm import LlmModule
-from api.app import robot_state, manager
 
 import asyncio, json, logging
 
@@ -42,6 +41,7 @@ class ConversationController:
 
     def _broadcast_chat_history(self, sender):
         try:
+            from api.app import robot_state, manager
             # Update robot_state and broadcast to all clients
             robot_state["chat_history"] = self.get_chat_history()
             # Broadcast as a dedicated message

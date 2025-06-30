@@ -51,13 +51,15 @@ class SpeechController:
             with self.speech_to_text._lock:
                 self.speech_to_text.transcription_in_progress = False  # Mark as done
                 if not text:
-                    return
-                self.parent._send_ws_command({"type": "update_transcription", "last_transcription": text})
+                    return None
+                # Notify API/server of transcription update
+            if hasattr(self.parent, 'state_update_callback') and self.parent.state_update_callback:
+                self.parent.state_update_callback({"type": "update_transcription", "last_transcription": text})
                 if self.debug:
                     logger.info(f"Transcribed: {text}")
                 if text.lower().strip() == "thanks robbie":
                     self.parent._return_to_standby()
-                    return
+                    return None
                 self.parent._set_state(RobotState.PROCESSING)
                 response = self.parent.conversation.chat(text)
                 if response:
@@ -80,9 +82,11 @@ class SpeechController:
                         logger.debug(f"[SpeechController] self.voice.say call complete")
                     except Exception as e:
                         logger.error(f"[SpeechController] Error calling self.voice.say: {str(e)}")
+                    return response
                 else:
                     logger.warning("No response from AI")
                     self.parent._set_state(RobotState.LISTENING)
+                    return None
         except Exception as e:
             logger.exception(f"[SpeechController] Unhandled exception in on_transcription: {e}")
             try:
@@ -94,6 +98,7 @@ class SpeechController:
             else:
                 logger.warning("No response from AI")
                 self.parent._set_state(RobotState.LISTENING)
+            return None
 
     def on_speech_complete(self):
         # Always start listening after speech completes, and set state to LISTENING
@@ -114,6 +119,6 @@ class SpeechController:
             self.parent._return_to_standby()
 
     def cleanup(self):
-        self.wake_word.cleanup()
-        self.speech_to_text.cleanup()
-        self.voice.cleanup()
+        for mod in (self.wake_word, self.speech_to_text, self.voice):
+            if mod:
+                mod.cleanup()

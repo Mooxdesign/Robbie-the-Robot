@@ -1,6 +1,5 @@
 import threading
 import json
-import websocket  # websocket-client package
 from config import Config
 from modules.vision import VisionModule
 from modules.audio import AudioModule
@@ -19,61 +18,27 @@ robot_instance = None
 
 class RobotController:
     """Main robot controller that coordinates all subsystems"""
-    def __init__(self, debug: bool = False, api_enabled: bool = False):
-        # Start WebSocket thread for backend updates (only if API enabled)
-        self._ws_url = "ws://localhost:8000/ws"
-        self._ws = None
-        self._ws_thread = None
-        if api_enabled:
-            self._ws_thread = threading.Thread(target=self._start_ws_client, daemon=True)
-            self._ws_thread.start()
-        # Load config
+    def __init__(self, debug: bool = False, api_enabled: bool = False, state_update_callback: Optional[Callable[[dict], None]] = None):
+        """
+        Main robot controller that coordinates all subsystems.
+        state_update_callback: function to call with updated robot state (for WebSocket broadcast)
+        """
         self.config = Config()
         self._lock = threading.Lock()
         self.debug = debug
         self._state = RobotState.STANDBY
-        # Initialize modules
-        # Use output_device_index=2 for Stereo Mix (update as needed for your system)
-        self.audio = AudioModule(output_device_index=2, debug=debug)
+        self.audio = AudioModule(debug=debug)
         self.speech = SpeechController(self, self.audio, debug=debug)
-        # Register output audio level callback for UI
         self.audio.add_output_audio_level_callback(self._on_output_audio_level)
         self.conversation = ConversationController(debug=debug)
         self.leds = LedsModule(debug=debug)
         self.vision = VisionModule(debug=debug)
-
+        # Callback for state updates (should be set by API layer)
+        self.state_update_callback = state_update_callback
         # Register global instance for API access
         global robot_instance
         robot_instance = self
 
-        # Start WebSocket thread for backend updates (only if API enabled)
-        self._ws_url = "ws://localhost:8000/ws"
-        self._ws = None
-        self._ws_thread = None
-        if api_enabled:
-            self._ws_thread = threading.Thread(target=self._start_ws_client, daemon=True)
-            self._ws_thread.start()
-
-    def _start_ws_client(self):
-        while True:
-            try:
-                self._ws = websocket.WebSocket()
-                self._ws.connect(self._ws_url)
-                break
-            except Exception as e:
-                if self.debug:
-                    logger.error(f"WebSocket connection failed: {e}, retrying...")
-                import time; time.sleep(2)
-
-    def _send_ws_command(self, command):
-        try:
-            # if self.debug:
-            #     print(f"[DEBUG] _send_ws_command sending: {command}")
-            if self._ws and self._ws.connected:
-                self._ws.send(json.dumps(command))
-        except Exception as e:
-            if self.debug:
-                logger.error(f"WebSocket send failed: {e}")
 
     def start(self):
         if self.debug:
@@ -115,10 +80,10 @@ class RobotController:
         if self.debug:
             logger.info("Returning to standby mode")
         # Stop speech recognition
-        if self.speech:
+        if self.speech and self.speech.speech_to_text:
             self.speech.speech_to_text.stop_listening()
         # Start wake word detection
-        if self.speech:
+        if self.speech and self.speech.wake_word:
             self.speech.wake_word.start_listening()
         # Set state last
         self._set_state(RobotState.STANDBY)
@@ -133,9 +98,11 @@ class RobotController:
             logger.info("[wake_up] Triggered: transitioning to LISTENING and starting speech recognition.")
         if self.speech:
             # Stop wake word detection
-            self.speech.wake_word.stop_listening()
+            if self.speech.wake_word:
+                self.speech.wake_word.stop_listening()
             # Start speech recognition
-            self.speech.speech_to_text.start_listening()
+            if self.speech.speech_to_text:
+                self.speech.speech_to_text.start_listening()
         self._set_state(RobotState.LISTENING)
 
     def _on_input_audio_level(self, input_audio_level_db: float):
@@ -158,7 +125,9 @@ class RobotController:
             self._last_input_audio_level_time = now
             # if self.debug:
             #     print(f"[DEBUG] _on_input_audio_level sending input_audio_level_db: {input_audio_level_db}")
-            self._send_ws_command({"type": "update_audio_level", "input_audio_level_db": float(input_audio_level_db)})
+            # Notify API/server of input audio level update
+        if self.state_update_callback:
+            self.state_update_callback({"type": "update_audio_level", "input_audio_level_db": float(input_audio_level_db)})
         # else:
         #     if self.debug:
         #         print(f"[DEBUG] _on_input_audio_level throttled input_audio_level_db: {input_audio_level_db}")
@@ -183,7 +152,9 @@ class RobotController:
             self._last_output_audio_level_time = now
             # if self.debug:
                 # print(f"[DEBUG] _on_output_audio_level sending output_audio_level_db: {output_audio_level_db}")
-            self._send_ws_command({"type": "update_audio_level", "output_audio_level_db": float(output_audio_level_db)})
+            # Notify API/server of output audio level update
+        if self.state_update_callback:
+            self.state_update_callback({"type": "update_audio_level", "output_audio_level_db": float(output_audio_level_db)})
         # else:
         #     if self.debug:
                 # print(f"[DEBUG] _on_output_audio_level throttled output_audio_level_db: {output_audio_level_db}")

@@ -38,49 +38,49 @@ export const api = {
         this.ws = new WebSocket("ws://localhost:8000/ws");
         this.ws.onopen = () => {
             console.log("[api.js] WebSocket connected");
-            if (this.reconnectTimeout) {
-                clearTimeout(this.reconnectTimeout);
-                this.reconnectTimeout = null;
+            if (this.reconnectDelay) {
+                clearTimeout(this.reconnectDelay);
+                this.reconnectDelay = null;
             }
-        };
-        this.ws.onclose = (event) => {
-            console.warn("[api.js] WebSocket closed, attempting to reconnect...", event);
-            this.reconnectTimeout = setTimeout(() => {
-                this.initWebSocket();
-            }, 2000); // Try to reconnect after 2 seconds
         };
         this.ws.onerror = (event) => {
             console.error("[api.js] WebSocket error:", event);
             // Optionally close to trigger onclose and reconnect
             this.ws.close();
         };
+
+        this.ws.onclose = (event) => {
+            console.warn('[DEBUG] WebSocket closed:', event.code, event.reason, 'Reconnecting in', this.reconnectDelay, 'ms...');
+            this.isConnected = false;
+            setTimeout(() => {
+                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+                this.initWebSocket();
+            }, this.reconnectDelay);
+        };
+
         this.ws.onmessage = (event) => {
             let data;
             try {
                 data = JSON.parse(event.data);
             } catch (e) {
-                console.error('[DEBUG] Failed to parse WebSocket message:', event.data, e);
+                console.error('[api.js] Failed to parse WebSocket message:', event.data, e);
                 return;
             }
-            // Hybrid event dispatch: specialized listeners for high-frequency, state for holistic
+            // Only handle audio level as a special case
             if (typeof data.audio_level !== 'undefined') {
                 this._audioLevelListeners.forEach(cb => cb(data.audio_level));
+                // Do NOT trigger full state update for audio level only
+                return;
             }
+            // Handle transcription listeners
             if (typeof data.last_transcription !== 'undefined') {
                 this._transcriptionListeners.forEach(cb => cb(data.last_transcription));
             }
-            // Always dispatch to state listeners with the full state
+            // For all other state changes, trigger full state update
             this._stateListeners.forEach(cb => cb(data));
         };
         this.ws.onerror = (error) => {
-            console.error('[DEBUG] WebSocket error:', error, this.ws.readyState);
-        };
-        this.ws.onclose = (event) => {
-            console.warn('[DEBUG] WebSocket closed:', event.code, event.reason, 'Reconnecting in', this.reconnectDelay, 'ms...');
-            setTimeout(() => {
-                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
-                this.initWebSocket();
-            }, this.reconnectDelay);
+            console.error('[api.js] WebSocket error:', error, this.ws.readyState);
         };
     },
 

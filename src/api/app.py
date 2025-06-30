@@ -9,6 +9,34 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# --- Integrate RobotController state updates with WebSocket broadcast ---
+
+main_event_loop = None
+
+def robot_state_update_callback(update: dict):
+    # Called by RobotController when state changes
+    # Merge update into global robot_state and broadcast
+    robot_state.update({k: v for k, v in update.items() if k in robot_state})
+    # Broadcast full robot_state to all clients
+    try:
+        global main_event_loop
+        if main_event_loop and main_event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(manager.broadcast(json.dumps(robot_state)), main_event_loop)
+        else:
+            logger.error("Main event loop is not running or not set.")
+    except Exception as e:
+        logger.error(f"Error broadcasting robot state: {e}")
+
+
+@app.on_event("startup")
+async def setup_robot_callback():
+    global main_event_loop
+    main_event_loop = asyncio.get_running_loop()
+    from controller.robot import robot_instance
+    if robot_instance and getattr(robot_instance, 'state_update_callback', None) is None:
+        robot_instance.state_update_callback = robot_state_update_callback
+
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -31,11 +59,20 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections:
+        if not self.active_connections:
+            logging.debug("No WebSocket clients connected; broadcast skipped.")
+            return
+        to_remove = set()
+        for connection in list(self.active_connections):
             try:
                 await connection.send_text(message)
             except Exception as e:
-                logging.error(f"Error sending message: {e}")
+                logging.warning(f"WebSocket send failed, removing client: {e}")
+                to_remove.add(connection)
+        for connection in to_remove:
+            self.active_connections.discard(connection)
+        if to_remove:
+            logging.info(f"Removed {len(to_remove)} disconnected WebSocket clients from active_connections.")
 
 manager = ConnectionManager()
 
@@ -157,7 +194,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
             except Exception as e:
                 logging.error(f"WebSocket loop error: {e}")
-                continue
+                break
     except Exception as e:
         logging.error(f"WebSocket error: {e}")
     finally:
