@@ -18,6 +18,10 @@ from .audio import AudioModule
 import logging
 logger = logging.getLogger(__name__)
 
+class WakeWordInitError(Exception):
+    """Raised when the wake word module fails to initialize properly."""
+    pass
+
 class WakeWordModule:
     """
     Wake word detection using Porcupine.
@@ -61,8 +65,8 @@ class WakeWordModule:
                 logger.info("Porcupine initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Porcupine: {e}")
-            self.porcupine = None
-            return
+            raise WakeWordInitError(f"Porcupine initialization failed: {e}")
+
             
         # Detection setup
         self.is_listening = False

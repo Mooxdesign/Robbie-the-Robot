@@ -1,4 +1,4 @@
-from modules.wake_word import WakeWordModule
+from modules.wake_word import WakeWordModule, WakeWordInitError
 from modules.speech_to_text import SpeechToTextModule
 from modules.voice import VoiceModule
 from .state import RobotState
@@ -16,12 +16,23 @@ class SpeechController:
             access_key = parent.config.get('picovoice', 'access_key', default=None)
         if not access_key:
             access_key = os.environ.get('PICOVOICE_API_KEY') or os.environ.get('PICOVOICE_ACCESS_KEY')
-        self.wake_word = WakeWordModule(
-            audio_module=audio_module,
-            wake_word="porcupine",
-            access_key=access_key,
-            debug=debug
-        )
+        self.wake_word = None
+        if access_key:
+            try:
+                candidate = WakeWordModule(
+                    audio_module=audio_module,
+                    wake_word="porcupine",
+                    access_key=access_key,
+                    debug=debug
+                )
+                self.wake_word = candidate
+            except WakeWordInitError as e:
+                if debug:
+                    logger.info(f"WakeWordModule initialization failed: {e}")
+                self.wake_word = None
+        else:
+            if debug:
+                logger.info("No Picovoice access key found. Wake word detection disabled.")
         self.speech_to_text = SpeechToTextModule(
             audio_module=audio_module,
             debug=debug
@@ -33,7 +44,8 @@ class SpeechController:
 
     def _register_callbacks(self):
         if not self._callbacks_registered:
-            self.wake_word.add_detection_callback(self.on_wake_word)
+            if self.wake_word:
+                self.wake_word.add_detection_callback(self.on_wake_word)
             self.speech_to_text.add_transcription_callback(self.on_transcription)
             self.speech_to_text.add_input_audio_level_callback(self.parent._on_input_audio_level)
             self.speech_to_text.add_timeout_callback(self.on_silence_timeout)
