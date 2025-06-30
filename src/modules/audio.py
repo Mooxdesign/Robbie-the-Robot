@@ -23,20 +23,16 @@ class AudioModule:
     FORMAT_FLOAT32 = pyaudio.paFloat32
     FORMAT_INT16 = pyaudio.paInt16
     
-    def __init__(self, input_device_index: Optional[int] = None, output_device_index: Optional[int] = None, debug: bool = False):
+    def __init__(self, debug: bool = False):
         self._input_audio_level_callbacks: List[Callable[[float], None]] = []
         self._output_audio_level_callbacks: List[Callable[[float], None]] = []
         """
         Initialize audio module
         
         Args:
-            input_device_index: Index of audio input device to use
-            output_device_index: Index of output (loopback/Stereo Mix) device to monitor
             debug: Enable debug output
         """
         self.debug = debug
-        self.input_device_index = input_device_index
-        self.output_device_index = output_device_index
         self._lock = threading.Lock()
         
         # Load config
@@ -64,13 +60,16 @@ class AudioModule:
                 except Exception as e:
                     logger.error(f"  Error getting device {i} info: {e}")
             try:
-                device_info = self._pyaudio.get_device_info_by_index(self.input_device_index) if self.input_device_index is not None else self._pyaudio.get_default_input_device_info()
+                device_info = self._pyaudio.get_default_input_device_info()
+                self.input_device_index = device_info['index']
                 logger.info(f"[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
                 logger.info(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
                 logger.error(f"[AudioModule] Error getting selected device info: {e}")
 
         # Start output audio monitoring thread if output_device_index is provided
+        self.output_device_index = self.get_stereo_mix_device_index()
+        logger.info(f"[AudioModule] Using audio output device: {self.output_device_index}")
         if self.output_device_index is not None:
             self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, daemon=True)
             self._output_monitor_thread.start()
@@ -390,3 +389,17 @@ class AudioModule:
             except Exception as e:
                 logger.error(f"Error terminating PyAudio: {e}")
             self._pyaudio = None
+
+    def get_stereo_mix_device_index(self) -> Optional[int]:
+        """Get the index of the stereo mix device"""
+        if not self._pyaudio:
+            return None
+        # ensure stereo mix is chosen
+        try:
+            for i in range(self._pyaudio.get_device_count()):
+                dev_info = self._pyaudio.get_device_info_by_index(i)
+                if 'stereo mix' in dev_info['name'].lower():
+                    return i
+        except Exception as e:
+            logger.error(f"Error getting stereo mix device index: {e}")
+        return None
