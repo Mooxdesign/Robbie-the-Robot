@@ -50,6 +50,7 @@ app.add_middleware(
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
+        self._last_no_websocket_log = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -60,7 +61,10 @@ class ConnectionManager:
 
     async def broadcast(self, message: str):
         if not self.active_connections:
-            logging.debug("No WebSocket clients connected; broadcast skipped.")
+            now = time.time()
+            if now - self._last_no_ws_log > 5:  # Log at most once every 5 seconds
+                logging.debug("No WebSocket clients connected; broadcast skipped.")
+                self._last_no_ws_log = now
             return
         to_remove = set()
         for connection in list(self.active_connections):

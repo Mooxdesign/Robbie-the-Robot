@@ -1,40 +1,21 @@
 from controller.robot import RobotController
 from api.app import app
 import uvicorn
-import sys
-import time
-import logging
 import threading
+import argparse
+from utils.logging import setup_logging
 
-# Reduce verbosity from noisy libraries
-logging.getLogger('comtypes').setLevel(logging.WARNING)
-logging.getLogger('comtypes.client').setLevel(logging.WARNING)
-logging.getLogger('comtypes.server').setLevel(logging.WARNING)
-logging.getLogger('asyncio').setLevel(logging.WARNING)
+parser = argparse.ArgumentParser(description="Robbie the Robot Main Entry Point")
+parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+parser.add_argument('--api', action='store_true', help='Enable API server')
+args = parser.parse_args()
 
-def setup_logging():
-    # Truncate (clear) the log file at the start of each run
-    with open('robot.log', 'w'):
-        pass
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='[%(asctime)s] [%(levelname)s] [%(threadName)s] %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('robot.log', mode='a')
-        ]
-    )
-
-setup_logging()
+setup_logging(debug=args.debug)
+import logging
 logger = logging.getLogger(__name__)
-logger.info("[TEST] Logging system initialized and test message written.")
-
 
 if __name__ == "__main__":
-    api_enabled = False
-    if '--api' in sys.argv:
-        api_enabled = True
-    robot = RobotController(debug=True, api_enabled=api_enabled)
+    robot = RobotController(debug=True, api_enabled=args.api)
 
     # Patch robot.leds.show for live LED matrix updates
     try:
@@ -59,45 +40,18 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"[API] Error patching robot.leds.show: {e}")
 
-    def log_thread_health():
-        import threading
-        logger.info("[THREAD AUDIT] ---- Active Thread Dump ----")
-        threads = threading.enumerate()
-        logger.info(f"[THREAD AUDIT] Total threads: {len(threads)}")
-        # for t in threads:
-        #     logger.info(f"[THREAD AUDIT] Name: {t.name}, ID: {t.ident}, Daemon: {t.daemon}")
-        logger.info("[THREAD AUDIT] --------------------------")
-        # Optionally, log key robot module thread status as well
-        key_threads = [
-            ("VoiceModule", getattr(robot.speech, 'voice', None)),
-            ("SpeechToTextModule", getattr(robot.speech, 'speech_to_text', None)),
-            ("WakeWord", getattr(robot.speech, 'wake_word', None)),
-            ("VisionModule", getattr(robot, 'vision', None)),
-            ("MotorModule", getattr(robot, 'motor', None)),
-        ]
-        for name, obj in key_threads:
-            t = getattr(obj, 'thread', None) if hasattr(obj, 'thread') else obj
-            if isinstance(t, threading.Thread):
-                logger.info(f"[THREAD AUDIT] {name}: is_alive={t.is_alive()} (ID={t.ident})")
-            elif hasattr(obj, 'is_running'):
-                logger.info(f"[THREAD AUDIT] {name}: is_running={getattr(obj, 'is_running', None)}")
-            else:
-                logger.info(f"[THREAD AUDIT] {name}: not found or not a thread.")
-
-    def thread_health_auditor(interval=10):
-        while True:
-            time.sleep(interval)
-            log_thread_health()
-
-    # Start background thread for thread health auditing
-    auditor_thread = threading.Thread(target=thread_health_auditor, args=(10,), name="ThreadHealthAuditor", daemon=True)
-    auditor_thread.start()
-    logger.info("[THREAD AUDIT] Background thread health auditor started.")
+    # ONLY START THIS IN DEBUG MODE
+    if args.debug:
+        from utils.monitoring import thread_health_auditor, log_resource_usage
+        logger.debug("[THREAD AUDIT] Starting thread health auditor...")
+        threading.Thread(target=thread_health_auditor, args=(robot, logger, 10), name="ThreadHealthAuditor", daemon=True).start()
+        logger.debug("[THREAD AUDIT] Starting resource usage logger...")
+        threading.Thread(target=log_resource_usage, daemon=True).start()
 
     try:
         logger.info("[MAIN] Starting robot controller...")
         robot.start()
-        if api_enabled:
+        if args.api:
             logger.info("[MAIN] Starting API server...")
             uvicorn.run(app, host="localhost", port=8000)
 
