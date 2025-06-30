@@ -61,7 +61,6 @@ class WakeWordModule:
                 logger.info("Porcupine initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Porcupine: {e}")
-            logger.error("Failed to dedref")
             self.porcupine = None
             return
             
