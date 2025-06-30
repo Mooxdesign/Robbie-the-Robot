@@ -50,6 +50,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+robot.log
 last_transcription_input.wav
 
 # Build Artifacts
