@@ -23,6 +23,9 @@ class RobotController:
         Main robot controller that coordinates all subsystems.
         state_update_callback: function to call with updated robot state (for WebSocket broadcast)
         """
+        # Callback for state updates (should be set by API layer)
+        self.state_update_callback = state_update_callback
+        
         self.config = Config()
         self._lock = threading.Lock()
         self.debug = debug
@@ -33,8 +36,7 @@ class RobotController:
         self.conversation = ConversationController(debug=debug)
         self.leds = LedsModule(debug=debug)
         self.vision = VisionModule(debug=debug)
-        # Callback for state updates (should be set by API layer)
-        self.state_update_callback = state_update_callback
+
         # Register global instance for API access
         global robot_instance
         robot_instance = self
