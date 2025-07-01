@@ -2,18 +2,7 @@
   <SectionCard title="Status">
     <RobotStatus />
   </SectionCard>
-
-  <SectionCard title="Robot Configuration">
-    <div class="dashboard-config-grid">
-      <ConfigGeneral />
-      <ConfigSensors />
-    </div>
-  </SectionCard>
-
-  <SectionCard title="LED Matrix">
-    <LedMatrix />
-  </SectionCard>
-
+  
   <SectionCard title="Audio">
     <StereoMixDevice />
     <AudioLevels />
@@ -23,9 +12,21 @@
     <ChatPanel />
   </SectionCard>
 
+  <SectionCard title="LED Matrix">
+    <LedMatrix />
+  </SectionCard>
+
+
   <SectionCard title="Debug Console">
     <DebugConsole />
   </SectionCard>
+
+<SectionCard title="Robot Configuration">
+  <div class="dashboard-config-grid">
+    <ConfigGeneral />
+    <ConfigSensors />
+  </div>
+</SectionCard>
 </template>
 
 <script setup lang="ts">
