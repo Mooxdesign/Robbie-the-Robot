@@ -68,15 +68,16 @@ class AudioModule:
                 logger.error(f"[AudioModule] Error getting selected device info: {e}")
 
         # Start output audio monitoring thread if output_device_index is provided
-        self.output_device_index = self.get_stereo_mix_device_index()
+        self.output_device_index = self.get_first_stereo_mix_device_index()
         logger.info(f"[AudioModule] Using audio output device: {self.output_device_index}")
         if self.output_device_index is not None:
             self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, daemon=True)
             self._output_monitor_thread.start()
 
-    def _output_monitor_loop(self):
+    def _output_monitor_loop(self, stop_event=None):
         """
         Monitor the output (loopback/Stereo Mix) device for real audio output levels and trigger callbacks.
+        Accepts a stop_event to allow clean shutdown when switching devices.
         """
         try:
             stream = self._pyaudio.open(
@@ -89,15 +90,20 @@ class AudioModule:
             )
             if self.debug:
                 logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
-            while True:
+            while not (stop_event and stop_event.is_set()):
                 data = stream.read(self.default_chunk_size, exception_on_overflow=False)
                 audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
                 rms = np.sqrt(np.mean(audio_data ** 2))
                 db = 20 * np.log10(rms) if rms > 0 else -100
                 self._trigger_output_audio_level_callbacks(db)
+            stream.stop_stream()
+            stream.close()
+            if self.debug:
+                logger.info(f"[AudioModule] Output monitor thread stopped for device index {self.output_device_index}")
         except Exception as e:
             if self.debug:
                 logger.error(f"[AudioModule] Output monitor error: {e}")
+
 
     def add_input_audio_level_callback(self, callback: Callable[[float], None]) -> None:
         """Register a callback for real-time input audio level (dB)."""
@@ -390,16 +396,66 @@ class AudioModule:
                 logger.error(f"Error terminating PyAudio: {e}")
             self._pyaudio = None
 
-    def get_stereo_mix_device_index(self) -> Optional[int]:
-        """Get the index of the stereo mix device"""
-        if not self._pyaudio:
-            return None
-        # ensure stereo mix is chosen
-        try:
-            for i in range(self._pyaudio.get_device_count()):
-                dev_info = self._pyaudio.get_device_info_by_index(i)
-                if 'stereo mix' in dev_info['name'].lower():
-                    return i
-        except Exception as e:
-            logger.error(f"Error getting stereo mix device index: {e}")
+    def get_first_stereo_mix_device_index(self) -> Optional[int]:
+        """Compatibility shim: Return the first Stereo Mix device index, or None if unavailable."""
+        devices = self.list_stereo_mix_devices()
+        if devices:
+            return devices[0][0]
         return None
+
+    def list_stereo_mix_devices(self):
+        """Return a list of (index, name) for all Stereo Mix devices."""
+        if not self._pyaudio:
+            return []
+        devices = []
+        for i in range(self._pyaudio.get_device_count()):
+            dev_info = self._pyaudio.get_device_info_by_index(i)
+            if 'stereo mix' in dev_info['name'].lower():
+                devices.append((i, dev_info['name']))
+        return devices
+
+    def set_output_device_index(self, index: int):
+        """Set the output device index and robustly restart the output monitor thread."""
+        with self._lock:
+            self.output_device_index = index
+            # Stop old monitor thread if running
+            if hasattr(self, '_output_monitor_stop_event'):
+                self._output_monitor_stop_event.set()
+            if hasattr(self, '_output_monitor_thread') and self._output_monitor_thread.is_alive():
+                self._output_monitor_thread.join(timeout=2)
+            # Start new monitor thread
+            self._output_monitor_stop_event = threading.Event()
+            self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, args=(self._output_monitor_stop_event,), daemon=True)
+            self._output_monitor_thread.start()
+            if self.debug:
+                logger.info(f"[AudioModule] Output monitor switched to device index {index}")
+            # State update callback for frontend
+            if hasattr(self, 'state_update_callback') and self.state_update_callback:
+                devices = self.list_stereo_mix_devices()
+                dev_name = None
+                for idx, name in devices:
+                    if idx == index:
+                        dev_name = name
+                        break
+                self.state_update_callback({
+                    "type": "update_audio_output_device",
+                    "output_device_index": index,
+                    "output_device_name": dev_name
+                })
+
+
+    def cycle_stereo_mix_device(self):
+        """Cycle to the next available Stereo Mix device."""
+        devices = self.list_stereo_mix_devices()
+        if not devices:
+            return None
+        current = self.output_device_index
+        indices = [idx for idx, _ in devices]
+        if current in indices:
+            idx = indices.index(current)
+            next_idx = (idx + 1) % len(indices)
+        else:
+            next_idx = 0
+        next_device = devices[next_idx]
+        self.set_output_device_index(next_device[0])
+        return next_device

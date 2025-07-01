@@ -15,6 +15,7 @@
   </SectionCard>
 
   <SectionCard title="Audio">
+    <StereoMixDevice />
     <AudioLevels />
   </SectionCard>
 
@@ -34,6 +35,7 @@ import ConfigSensors from '../components/ConfigSensors.vue';
 import RobotStatus from '../components/RobotStatus.vue';
 import RobotControl from '../components/RobotControl.vue';
 import AudioLevels from '../components/AudioLevels.vue';
+import StereoMixDevice from '../components/StereoMixDevice.vue';
 import LedMatrix from '../components/LedMatrix.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import DebugConsole from '../components/DebugConsole.vue';

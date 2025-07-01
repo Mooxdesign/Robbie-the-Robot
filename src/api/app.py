@@ -11,6 +11,28 @@ app = FastAPI()
 
 # --- Integrate RobotController state updates with WebSocket broadcast ---
 
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+@app.get('/api/audio/stereo_mix_devices')
+def get_stereo_mix_devices():
+    from controller.robot import robot_instance
+    if not robot_instance or not hasattr(robot_instance, 'audio'):
+        return JSONResponse(content={"error": "Robot audio module not available"}, status_code=500)
+    devices = robot_instance.audio.list_stereo_mix_devices()
+    return {"devices": devices}
+
+@app.post('/api/audio/cycle_stereo_mix')
+def cycle_stereo_mix():
+    from controller.robot import robot_instance
+    if not robot_instance or not hasattr(robot_instance, 'audio'):
+        return JSONResponse(content={"error": "Robot audio module not available"}, status_code=500)
+    device = robot_instance.audio.cycle_stereo_mix_device()
+    if not device:
+        return JSONResponse(content={"error": "No Stereo Mix devices found"}, status_code=404)
+    return {"selected_device": device}
+
+
 main_event_loop = None
 
 def robot_state_update_callback(update: dict):
