@@ -18,46 +18,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 if LED_AVAILABLE:
-    from unicornhatmini import UnicornHATMini
+    from unicorn_hat import UnicornHATMini
     logger.info("Unicorn HAT Mini detected")
 else:
     logger.info("No LED matrix detected - running in simulation mode")
     from simulation.hardware import SimulatedUnicornHATMini as UnicornHATMini
 
 class LedsModule:
-    def visualize_kitt_pulse(self, volume: float):
-        """
-        Visualize a KITT-style red pulse from the center, fading outwards, with brightness based on volume.
-        Args:
-            volume (float): Normalized volume (0.0 = off, 1.0 = max)
-        """
-        with self._lock:
-            # Early exit for silence
-            if volume <= 0.01:
-                self.buffer.fill(0)
-                if self.unicorn:
-                    for y in range(self.height):
-                        for x in range(self.width):
-                            self.unicorn.set_pixel(x, y, 0, 0, 0)
-                self.show()
-                return
-            # Center columns for 8x4: 3 and 4
-            falloff = [0.125, 0.25, 0.5, 1.0, 1.0, 0.5, 0.25, 0.125]  # per column
-            for y in range(self.height):
-                for x in range(self.width):
-                    brightness = falloff[x] * volume
-                    r = int(255 * brightness)
-                    self.buffer[y, x] = [r, 0, 0]
-                    if self.unicorn:
-                        self.unicorn.set_pixel(x, y, r, 0, 0)
-            self.show()
-
+    """
+    Handles direct interaction with the LED hardware (Unicorn HAT Mini or simulation),
+    buffer management, and thread safety. All higher-level control and pattern logic
+    should be handled by LedsController and LedsAnimations.
+    """
+    # All visualization and pattern logic has been moved to LedsController and LedsAnimations.
+    # This class now only provides hardware and buffer access methods.
     """
     Controls the Unicorn pHAT LED matrix with various patterns and animations
     """
     
     def __init__(self, brightness: float = 0.5, debug: bool = False):
         self.current_color = (0, 0, 0)
+        self.current_animation_state = None  # e.g. {'currentAnimation': 'rainbow', 'loop': True}
         """
         Initialize LED module
         
@@ -137,24 +118,9 @@ class LedsModule:
         if self.is_animating:
             self.stop_animation()
             
-        animation_map = {
-            'rainbow': self._rainbow_animation,
-            'pulse': self._pulse_animation,
-            'wave': self._wave_animation,
-            'sparkle': self._sparkle_animation
-        }
-        
-        if animation_name in animation_map:
-            self.is_animating = True
-            self.current_animation = animation_name
-            self.animation_thread = threading.Thread(
-                target=animation_map[animation_name],
-                kwargs=kwargs,
-                daemon=True
-            )
-            self.animation_thread.start()
-            if self.debug:
-                logger.info(f"Started animation: {animation_name}")
+        # Animation logic has been refactored out of this module.
+        # This method should be handled by LedsController and LedsAnimations.
+        pass
     
     def stop_animation(self):
         """Stop current animation"""
@@ -165,57 +131,13 @@ class LedsModule:
         if self.debug:
             logger.info("Animation stopped")
     
-    def _rainbow_animation(self, speed: float = 0.01):
-        """Rainbow color cycle animation"""
-        hue = 0
-        while self.is_animating:
-            hue = (hue + speed) % 1.0
-            rgb = [int(x * 255) for x in colorsys.hsv_to_rgb(hue, 1.0, 1.0)]
-            self.set_all(*rgb)
-            self.show()
-            time.sleep(0.05)
+    # Rainbow animation logic has been moved to LedsAnimations.
     
-    def _pulse_animation(self, color: Tuple[int, int, int] = (255, 0, 0), speed: float = 0.05):
-        """Pulsing brightness animation"""
-        brightness = 0
-        direction = 1
-        while self.is_animating:
-            brightness = max(0, min(1, brightness + direction * speed))
-            if brightness >= 1 or brightness <= 0:
-                direction *= -1
-            r = int(color[0] * brightness)
-            g = int(color[1] * brightness)
-            b = int(color[2] * brightness)
-            self.set_all(r, g, b)
-            self.show()
-            time.sleep(0.05)
+    # Pulse animation logic has been moved to LedsAnimations.
     
-    def _wave_animation(self, color: Tuple[int, int, int] = (0, 0, 255), speed: float = 0.1):
-        """Horizontal wave animation"""
-        phase = 0
-        while self.is_animating:
-            for x in range(self.width):
-                brightness = (np.sin(phase + x * 0.5) + 1) / 2
-                r = int(color[0] * brightness)
-                g = int(color[1] * brightness)
-                b = int(color[2] * brightness)
-                for y in range(self.height):
-                    self.set_pixel(x, y, r, g, b)
-            self.show()
-            phase += speed
-            time.sleep(0.05)
+    # Wave animation logic has been moved to LedsAnimations.
     
-    def _sparkle_animation(self, color: Tuple[int, int, int] = (255, 255, 255), 
-                         density: float = 0.1):
-        """Random sparkling animation"""
-        while self.is_animating:
-            self.clear()
-            for y in range(self.height):
-                for x in range(self.width):
-                    if np.random.random() < density:
-                        self.set_pixel(x, y, *color)
-            self.show()
-            time.sleep(0.05)
+    # Sparkle animation logic has been moved to LedsAnimations.
     
     def visualize_audio(self, volume: float, color: Tuple[int, int, int] = (0, 255, 0)):
         """
@@ -329,34 +251,7 @@ class LedsModule:
             
             self.show()
     
-    def start_pulse(self, r: int, g: int, b: int, duration: float = 1.0):
-        """Start a pulse animation with the given color and duration (seconds)."""
-        if self.is_animating:
-            self.stop_animation()
-        self.is_animating = True
-        color = (r, g, b)
-        def run_pulse():
-            self._pulse_animation(color=color, speed=duration/20)
-            self.is_animating = False
-        self.animation_thread = threading.Thread(target=run_pulse, daemon=True)
-        self.animation_thread.start()
-        if self.debug:
-            logger.info(f"Started pulse animation: color={color}, duration={duration}")
-
-    def start_rainbow(self, duration: float = 1.0):
-        """Start a rainbow animation for the specified duration (seconds)."""
-        if self.is_animating:
-            self.stop_animation()
-        self.is_animating = True
-        def run_rainbow():
-            start = time.time()
-            while time.time() - start < duration:
-                self._rainbow_animation(speed=duration/20)
-            self.is_animating = False
-        self.animation_thread = threading.Thread(target=run_rainbow, daemon=True)
-        self.animation_thread.start()
-        if self.debug:
-            logger.info(f"Started rainbow animation: duration={duration}")
+    # Pulse and rainbow animation logic has been refactored out of this module.
 
     def set_brightness(self, value: float):
         """Set the brightness of the LED matrix."""

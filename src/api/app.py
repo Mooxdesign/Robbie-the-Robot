@@ -120,7 +120,9 @@ robot_state = {
     "last_transcription": "",  # Latest Whisper AI transcription
     "last_response": "",  # Latest AI response
     "led_matrix": [],  # 8x4 RGB LED matrix state (list of lists)
-    "chat_history": []  # Full chat history: list of {sender, text}
+    "led_animation": {},  # Animation state: {currentAnimation, loop}
+    "chat_history": [],  # Full chat history: list of {sender, text}
+    "robot_state": "standby"  # Current robot state (standby, listening, etc.)
 }
 
 # --- LED Matrix State Integration ---
@@ -134,7 +136,8 @@ def update_led_matrix_state(leds_module):
     with leds_module._lock:
         # Convert the numpy buffer (4,8,3) to a nested list for JSON serialization
         robot_state['led_matrix'] = leds_module.buffer.astype(int).tolist()
-        logger.debug(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']}")
+        robot_state['led_animation'] = leds_module.current_animation_state or {}
+        logger.debug(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']} led_animation: {robot_state['led_animation']}")
 
 @app.get("/api/status")
 async def get_status():
@@ -200,11 +203,36 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif cmd_type == "test_led":
                     from controller.robot import robot_instance
                     if robot_instance and hasattr(robot_instance, "leds"):
-                        leds = robot_instance.leds
+                        leds_module = robot_instance.leds.leds
                         # Fill the entire buffer with magenta
-                        leds.buffer[:, :] = [255, 0, 255]
-                        logger.info("[DEBUG] test_led: buffer shape:", leds.buffer.shape)
-                        leds.show()
+                        leds_module.buffer[:, :] = [255, 0, 255]
+                        logger.info(f"[DEBUG] test_led: buffer shape: {leds_module.buffer.shape} buffer: {leds_module.buffer.tolist()}")
+                        leds_module.show()
+                elif cmd_type == "set_led_animation":
+                    logger.info(f"[WS] set_led_animation command received: {command}")
+                    from controller.robot import robot_instance
+                    logger.info(f"[WS] robot_instance={robot_instance}, has leds={hasattr(robot_instance, 'leds')}")
+                    if robot_instance and hasattr(robot_instance, "leds"):
+                        animation = command.get("animation")
+                        loop = command.get("loop", True)
+                        logger.info(f"[WS] Dispatching to leds.start_animation: {animation}, loop={loop}")
+                        try:
+                            getattr(robot_instance.leds, "start_animation")(animation, loop=loop)
+                            logger.info(f"[WS] leds.start_animation call completed for {animation}")
+                        except Exception as e:
+                            logger.error(f"[WS] Exception in leds.start_animation: {e}")
+                        # Always call show on the main leds_module
+                        leds_module = getattr(robot_instance.leds, "leds", None)
+                        if leds_module:
+                            leds_module.show()
+                elif cmd_type == "stop_led_animation":
+                    logger.info(f"[WS] stop_led_animation command received: {command}")
+                    from controller.robot import robot_instance
+                    if robot_instance and hasattr(robot_instance, "leds"):
+                        getattr(robot_instance.leds, "stop_animation")()
+                        leds_module = getattr(robot_instance.leds, "leds", None)
+                        if leds_module:
+                            leds_module.show()
                 elif cmd_type == "wake":
                     from controller.robot import robot_instance
                     if robot_instance:

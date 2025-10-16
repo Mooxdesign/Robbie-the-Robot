@@ -3,7 +3,7 @@ import json
 from config import Config
 from modules.vision import VisionModule
 from modules.audio import AudioModule
-from modules.leds import LedsModule
+from controller.leds_controller import LedsController
 from enum import Enum, auto
 from typing import Optional, Callable
 import logging
@@ -34,7 +34,7 @@ class RobotController:
         self.speech = SpeechController(self, self.audio, debug=debug)
         self.audio.add_output_audio_level_callback(self._on_output_audio_level)
         self.conversation = ConversationController(debug=debug)
-        self.leds = LedsModule(debug=debug)
+        self.leds = LedsController(debug=debug)
         self.vision = VisionModule(debug=debug)
 
         # Register global instance for API access
@@ -60,6 +60,10 @@ class RobotController:
         if self.debug:
             logger.info(f"State transition: {self._state} -> {new_state}")
         self._state = new_state
+        if self.state_update_callback:
+            self.state_update_callback({
+                'robot_state': self._state.value
+            })
         # Update LED colors based on state
         if self.leds:
             if new_state == RobotState.STANDBY:

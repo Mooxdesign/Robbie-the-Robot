@@ -2,7 +2,7 @@
   <div class="status-root">
     <div class="status-header">
       <span class="status-label">Status:</span>
-      <span :class="['status-indicator', isConnected ? 'connected' : 'disconnected']"></span>
+      <span :class="['status-indicator', isConnected ? robotState.toLowerCase() : 'disconnected']"></span>
       <span class="status-state mono">{{ isConnected ? robotState : 'Disconnected' }}</span>
       <button @click="wakeRobot" class="btn status-wake-btn">Wake Robot</button>
     </div>
@@ -22,6 +22,7 @@
           <span class="label-muted" style="font-size:0.85rem;">{{ activity.time }}</span>
         </li>
       </ul>
+      <pre>{{ allState }}</pre>
 
     </div>
   </div>
@@ -38,6 +39,7 @@ const robotState = computed(() => robot.robotState)
 const batteryLevel = computed(() => robot.batteryLevel)
 const temperature = computed(() => robot.temperature)
 const recentActivity = computed(() => robot.recentActivity)
+const allState = computed(() => JSON.stringify(robot, null, 2))
 function wakeRobot() {
   robot.wakeRobot()
 }
@@ -65,6 +67,26 @@ function wakeRobot() {
   color: #555;
   font-size: 1.05rem;
   font-weight: 500;
+}
+.status-indicator {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 10px;
+  background: #bbb;
+}
+.status-indicator.listening {
+  background: #22c55e;
+}
+.status-indicator.standby {
+  background: #ef4444;
+}
+.status-indicator.disconnected {
+  background: #666666;
+}
+.status-indicator.speaking {
+  background: #2563eb
 }
 .status-state {
   color: #2563eb;

@@ -23,6 +23,12 @@ export const useRobotState = defineStore('robotState', () => {
   const pidI = ref(0.1)
   const pidD = ref(0.05)
 
+  // LED animation state
+  const ledAnimationState = ref({})
+
+  // LED matrix state
+  const ledMatrix = ref<any[][]>([])
+
   // Actions (global functions)
   // UI actions only emit commands, never mutate state directly
   function wakeRobot() {
@@ -71,6 +77,8 @@ export const useRobotState = defineStore('robotState', () => {
     if (state.recent_activity !== undefined) recentActivity.value = state.recent_activity
     if (state.input_audio_level_db !== undefined) inputAudioLevelDb.value = state.input_audio_level_db
     if (state.output_audio_level_db !== undefined) outputAudioLevelDb.value = state.output_audio_level_db;
+    if (state.led_animation !== undefined) ledAnimationState.value = state.led_animation;
+    if (state.led_matrix !== undefined) ledMatrix.value = state.led_matrix;
     // NEW: Update chatMessages if present
     if (Array.isArray(state.chat_history)) {
       chatMessages.value = state.chat_history.slice()
@@ -84,6 +92,8 @@ export const useRobotState = defineStore('robotState', () => {
     inputAudioLevelDb, outputAudioLevelDb,
     robotName, maxSpeed, sensorUpdateRate, sensorThreshold, pidP, pidI, pidD,
     chatMessages,
+    ledAnimationState,
+    ledMatrix,
     // Actions
     wakeRobot, setRobotName, setMaxSpeed, setSensorUpdateRate, setSensorThreshold, setPidP, setPidI, setPidD, updateFromBackend
   }

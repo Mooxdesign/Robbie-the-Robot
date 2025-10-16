@@ -21,10 +21,10 @@ if __name__ == "__main__":
     try:
         from api.app import update_led_matrix_state, manager, robot_state
         import json, asyncio
-        orig_show = robot.leds.show
+        orig_show = robot.leds.leds.show
         def patched_show(*args, **kwargs):
-            update_led_matrix_state(robot.leds)
-            logger.info("[API] Patched robot.leds.show called, led_matrix updated.")
+            logger.info(f"[API] Patched robot.leds.leds.show called, led_matrix updated. Buffer: {robot.leds.leds.buffer.tolist()}")
+            update_led_matrix_state(robot.leds.leds)
             # Broadcast updated state to all WebSocket clients
             try:
                 loop = asyncio.get_event_loop()
@@ -35,8 +35,8 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.error(f"[API] Error broadcasting LED matrix update: {e}")
             return orig_show(*args, **kwargs)
-        robot.leds.show = patched_show
-        logger.info("[API] Patched robot.leds.show for live LED matrix updates.")
+        robot.leds.leds.show = patched_show
+        logger.info("[API] Patched robot.leds.leds.show for live LED matrix updates.")
     except Exception as e:
         logger.error(f"[API] Error patching robot.leds.show: {e}")
 
