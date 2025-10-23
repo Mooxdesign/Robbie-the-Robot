@@ -41,9 +41,8 @@
       <div v-if="!ledMatrix || ledMatrix.length === 0" class="label-muted" style="margin-top:1rem;">No LED data</div>
       <div v-if="robot.ledAnimationState.currentAnimation" class="label-muted" style="margin-top:1rem;">
         Animation: <b>{{ robot.ledAnimationState.currentAnimation }}</b>
-        <span v-if="robot.ledAnimationState.loop">(Looping)</span>
       </div>
-      <pre class="mono" style="margin-top:1rem; background:#f3f4f6; padding:0.75rem; border-radius:6px; max-width:100%; overflow-x:auto; color:#333; font-size:0.9rem;">{{ JSON.stringify(ledMatrix, null, 2) }}</pre>
+      <!-- <pre class="mono" style="margin-top:1rem; background:#f3f4f6; padding:0.75rem; border-radius:6px; max-width:100%; overflow-x:auto; color:#333; font-size:0.9rem;">{{ JSON.stringify(ledMatrix, null, 2) }}</pre> -->
       <div v-if="ledMatrix && ledMatrix[0] && ledMatrix[0][0]" class="mono" style="margin-top:1rem; background:#fef3c7; padding:0.5rem; border-radius:6px; font-size:0.85rem; color:#a16207;">
         <span>First pixel RGB: {{ ledMatrix[0][0] }}</span>
         <span v-if="debugColor" style="margin-left:1em;">Computed CSS color: <span :style="{background: debugColor, color: '#fff', padding: '0 8px', borderRadius: '4px'}">{{ debugColor }}</span></span>
@@ -89,6 +88,7 @@ function testLedMatrix() {
   api.sendCommand({ type: 'test_led' });
 }
 const animations = [
+  { value: 'audio_pulse', label: 'Audio Pulse' },
   { value: 'rainbow', label: 'Rainbow' },
   { value: 'rainbow_blinky', label: 'Rainbow Blinky' },
   { value: 'random_blinky', label: 'Random Blinky' },
@@ -98,7 +98,7 @@ const animations = [
 const selectedAnimation = ref(animations[0].value)
 
 function setAnimation() {
-  api.sendCommand({ type: 'set_led_animation', animation: selectedAnimation.value, loop: true })
+  api.sendCommand({ type: 'set_led_animation', animation: selectedAnimation.value, duration: null })
 }
 function stopAnimation() {
   api.sendCommand({ type: 'stop_led_animation' })

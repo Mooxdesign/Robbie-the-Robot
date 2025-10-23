@@ -70,9 +70,6 @@ class AudioModule:
         # Start output audio monitoring thread if output_device_index is provided
         self.output_device_index = self.get_first_stereo_mix_device_index()
         logger.info(f"[AudioModule] Using audio output device: {self.output_device_index}")
-        if self.output_device_index is not None:
-            self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, daemon=True)
-            self._output_monitor_thread.start()
 
     def _output_monitor_loop(self, stop_event=None):
         """
@@ -90,7 +87,8 @@ class AudioModule:
             )
             if self.debug:
                 logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
-            while not (stop_event and stop_event.is_set()):
+            logger.info("[AudioModule] _output_monitor_loop is running.")
+            while not stop_event.is_set():
                 data = stream.read(self.default_chunk_size, exception_on_overflow=False)
                 audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
                 rms = np.sqrt(np.mean(audio_data ** 2))
@@ -112,6 +110,11 @@ class AudioModule:
     def add_output_audio_level_callback(self, callback: Callable[[float], None]) -> None:
         """Register a callback for real-time output audio level (dB)."""
         self._output_audio_level_callbacks.append(callback)
+
+    def remove_output_audio_level_callback(self, callback: Callable[[float], None]) -> None:
+        """Remove a callback for real-time output audio level (dB)."""
+        if callback in self._output_audio_level_callbacks:
+            self._output_audio_level_callbacks.remove(callback)
 
     def _trigger_input_audio_level_callbacks(self, audio_level: float) -> None:
         """Trigger all registered input audio level callbacks with the given dB level."""
@@ -376,6 +379,13 @@ class AudioModule:
     def cleanup(self) -> None:
         """Clean up resources"""
         logger.info("Cleaning up audio resources...")
+
+        # Stop output monitor thread
+        if hasattr(self, '_output_monitor_stop_event'):
+            self._output_monitor_stop_event.set()
+        if hasattr(self, '_output_monitor_thread') and self._output_monitor_thread.is_alive():
+            self._output_monitor_thread.join(timeout=2) # Wait for thread to finish
+
         for stream_id in list(self._streams.keys()):
             stream = self._streams[stream_id]["stream"]
             try:
@@ -395,6 +405,14 @@ class AudioModule:
             except Exception as e:
                 logger.error(f"Error terminating PyAudio: {e}")
             self._pyaudio = None
+
+    def start_monitoring(self):
+        """Starts the audio output monitoring thread."""
+        if self.output_device_index is not None:
+            self._output_monitor_stop_event = threading.Event()
+            self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, args=(self._output_monitor_stop_event,), daemon=True)
+            self._output_monitor_thread.start()
+            logger.info(f"[AudioModule] Started monitoring output device index {self.output_device_index}")
 
     def get_first_stereo_mix_device_index(self) -> Optional[int]:
         """Compatibility shim: Return the first Stereo Mix device index, or None if unavailable."""

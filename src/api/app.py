@@ -5,6 +5,7 @@ import json
 import asyncio
 from typing import Dict, Set
 import logging
+import time
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -72,7 +73,7 @@ app.add_middleware(
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
-        self._last_no_websocket_log = 0
+        self._last_no_ws_log = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -128,15 +129,15 @@ robot_state = {
 # --- LED Matrix State Integration ---
 import numpy as np
 
-def update_led_matrix_state(leds_module):
+def update_led_matrix_state(leds_controller):
     """
     Update robot_state['led_matrix'] with the current LED buffer as a nested list.
     Should be called after each LED buffer update.
     """
-    with leds_module._lock:
+    with leds_controller.leds._lock:
         # Convert the numpy buffer (4,8,3) to a nested list for JSON serialization
-        robot_state['led_matrix'] = leds_module.buffer.astype(int).tolist()
-        robot_state['led_animation'] = leds_module.current_animation_state or {}
+        robot_state['led_matrix'] = leds_controller.leds.buffer.astype(int).tolist()
+        robot_state['led_animation'] = leds_controller.current_animation_state or {}
         logger.debug(f"[DEBUG] update_led_matrix_state called. led_matrix: {robot_state['led_matrix']} led_animation: {robot_state['led_animation']}")
 
 @app.get("/api/status")
@@ -214,10 +215,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info(f"[WS] robot_instance={robot_instance}, has leds={hasattr(robot_instance, 'leds')}")
                     if robot_instance and hasattr(robot_instance, "leds"):
                         animation = command.get("animation")
-                        loop = command.get("loop", True)
-                        logger.info(f"[WS] Dispatching to leds.start_animation: {animation}, loop={loop}")
+                        duration = command.get("duration") # Get duration instead of loop
+                        logger.info(f"[WS] Dispatching to leds.start_animation: {animation}, duration={duration}")
                         try:
-                            getattr(robot_instance.leds, "start_animation")(animation, loop=loop)
+                            getattr(robot_instance.leds, "start_animation")(animation, duration=duration)
                             logger.info(f"[WS] leds.start_animation call completed for {animation}")
                         except Exception as e:
                             logger.error(f"[WS] Exception in leds.start_animation: {e}")

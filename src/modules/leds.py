@@ -38,7 +38,6 @@ class LedsModule:
     
     def __init__(self, brightness: float = 0.5, debug: bool = False):
         self.current_color = (0, 0, 0)
-        self.current_animation_state = None  # e.g. {'currentAnimation': 'rainbow', 'loop': True}
         """
         Initialize LED module
         
@@ -61,11 +60,6 @@ class LedsModule:
             logger.error(f"Failed to initialize LED matrix: {e}")
             self.unicorn = None
             
-        # Animation state
-        self.current_animation = None
-        self.animation_thread = None
-        self.is_animating = False
-        
         # Pattern buffers
         self.buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)  # (rows, cols, rgb)
         
@@ -75,6 +69,9 @@ class LedsModule:
         self.volume_decay = 0.05  # How quickly volume range adapts
         self.volume_smoothing = 0.3  # Smoothing factor for volume changes
         self.last_volume = 0
+
+        # Callback hooks
+        self._update_callbacks = []
         
     def set_pixel(self, x: int, y: int, r: int, g: int, b: int):
         """Set color of a single pixel"""
@@ -106,30 +103,12 @@ class LedsModule:
         """Update the display with current buffer"""
         if self.unicorn:
             self.unicorn.show()
-    
-    def start_animation(self, animation_name: str, **kwargs):
-        """
-        Start a predefined animation
-        
-        Args:
-            animation_name: Name of the animation to run
-            **kwargs: Animation-specific parameters
-        """
-        if self.is_animating:
-            self.stop_animation()
-            
-        # Animation logic has been refactored out of this module.
-        # This method should be handled by LedsController and LedsAnimations.
-        pass
-    
-    def stop_animation(self):
-        """Stop current animation"""
-        self.is_animating = False
-        if self.animation_thread:
-            self.animation_thread.join(timeout=1)
-            self.animation_thread = None
-        if self.debug:
-            logger.info("Animation stopped")
+        # Trigger update callbacks
+        for callback in self._update_callbacks:
+            try:
+                callback(self)
+            except Exception as e:
+                logger.error(f"Error in LED update callback: {e}")
     
     # Rainbow animation logic has been moved to LedsAnimations.
     
@@ -138,6 +117,10 @@ class LedsModule:
     # Wave animation logic has been moved to LedsAnimations.
     
     # Sparkle animation logic has been moved to LedsAnimations.
+    
+    def add_update_callback(self, callback):
+        """Register a callback to be triggered on LED updates."""
+        self._update_callbacks.append(callback)
     
     def visualize_audio(self, volume: float, color: Tuple[int, int, int] = (0, 255, 0)):
         """
@@ -274,14 +257,8 @@ class LedsModule:
                 raise ValueError("Color values must be between 0 and 255")
         self.set_all(r, g, b)
 
-    @property
-    def animation_running(self) -> bool:
-        """Return True if an animation is running."""
-        return self.is_animating
-
     def cleanup(self):
         """Clean up resources and turn off LEDs"""
-        self.stop_animation()
         self.clear()
         if self.debug:
             logger.info("LED cleanup completed")

@@ -15,30 +15,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
-    robot = RobotController(debug=True, api_enabled=args.api)
+    api_enabled = args.api
+    robot = RobotController(debug=True, api_enabled=api_enabled)
 
-    # Patch robot.leds.show for live LED matrix updates
-    try:
-        from api.app import update_led_matrix_state, manager, robot_state
-        import json, asyncio
-        orig_show = robot.leds.leds.show
-        def patched_show(*args, **kwargs):
-            logger.info(f"[API] Patched robot.leds.leds.show called, led_matrix updated. Buffer: {robot.leds.leds.buffer.tolist()}")
-            update_led_matrix_state(robot.leds.leds)
-            # Broadcast updated state to all WebSocket clients
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.ensure_future(manager.broadcast(json.dumps(robot_state)))
-                else:
-                    loop.run_until_complete(manager.broadcast(json.dumps(robot_state)))
-            except Exception as e:
-                logger.error(f"[API] Error broadcasting LED matrix update: {e}")
-            return orig_show(*args, **kwargs)
-        robot.leds.leds.show = patched_show
-        logger.info("[API] Patched robot.leds.leds.show for live LED matrix updates.")
-    except Exception as e:
-        logger.error(f"[API] Error patching robot.leds.show: {e}")
+    if api_enabled:
+        # Set up API callbacks
+        try:
+            from api import app as api_app
+            from api.app import update_led_matrix_state, manager, robot_state
+            import json, asyncio
+
+            def api_led_update_callback(leds_controller):
+                """Callback to broadcast LED state to API clients."""
+                update_led_matrix_state(leds_controller)
+                try:
+                    if api_app.main_event_loop and api_app.main_event_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(manager.broadcast(json.dumps(robot_state)), api_app.main_event_loop)
+                    else:
+                        logger.debug("[API] Main event loop not available for broadcasting LED matrix update.")
+                except Exception as e:
+                    logger.error(f"[API] Error broadcasting LED matrix update: {e}")
+            
+            robot.leds.add_api_update_callback(api_led_update_callback)
+            logger.info("[API] Registered callback for live LED matrix updates.")
+
+        except Exception as e:
+            logger.error(f"[API] Error setting up API callbacks: {e}")
 
     # ONLY START THIS IN DEBUG MODE
     if args.debug:
@@ -51,7 +53,7 @@ if __name__ == "__main__":
     try:
         logger.info("[MAIN] Starting robot controller...")
         robot.start()
-        if args.api:
+        if api_enabled:
             logger.info("[MAIN] Starting API server...")
             uvicorn.run(app, host="localhost", port=8000)
 

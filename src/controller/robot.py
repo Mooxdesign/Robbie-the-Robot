@@ -34,13 +34,12 @@ class RobotController:
         self.speech = SpeechController(self, self.audio, debug=debug)
         self.audio.add_output_audio_level_callback(self._on_output_audio_level)
         self.conversation = ConversationController(debug=debug)
-        self.leds = LedsController(debug=debug)
+        self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
 
         # Register global instance for API access
         global robot_instance
         robot_instance = self
-
 
     def start(self):
         if self.debug:
@@ -64,16 +63,17 @@ class RobotController:
             self.state_update_callback({
                 'robot_state': self._state.value
             })
-        # Update LED colors based on state
+        # Update LED animation based on state
         if self.leds:
+            self.leds.stop_animation()
             if new_state == RobotState.STANDBY:
-                self.leds.set_all(0, 127, 0)  # Green
+                self.leds.start_animation('standby_pulse')
             elif new_state == RobotState.LISTENING:
-                self.leds.set_all(0, 0, 127)  # Blue
+                self.leds.start_animation('solid_green')
             elif new_state == RobotState.PROCESSING:
-                self.leds.set_all(127, 0, 127)  # Purple
+                self.leds.start_animation('solid_blue')
             elif new_state == RobotState.SPEAKING:
-                self.leds.set_all(127, 127, 0)  # Yellow
+                self.leds.start_animation('audio_pulse')
 
     # Wake word, transcription, and speech completion are now handled by SpeechController
 
@@ -129,14 +129,8 @@ class RobotController:
         if send:
             self._last_input_audio_level_sent = input_audio_level_db
             self._last_input_audio_level_time = now
-            # if self.debug:
-            #     print(f"[DEBUG] _on_input_audio_level sending input_audio_level_db: {input_audio_level_db}")
-            # Notify API/server of input audio level update
         if self.state_update_callback:
             self.state_update_callback({"type": "update_audio_level", "input_audio_level_db": float(input_audio_level_db)})
-        # else:
-        #     if self.debug:
-        #         print(f"[DEBUG] _on_input_audio_level throttled input_audio_level_db: {input_audio_level_db}")
 
     def _on_output_audio_level(self, output_audio_level_db: float):
         """Handle real-time output audio level updates from the output (loopback) device (in dB)."""
@@ -156,14 +150,8 @@ class RobotController:
         if send:
             self._last_output_audio_level_sent = output_audio_level_db
             self._last_output_audio_level_time = now
-            # if self.debug:
-                # print(f"[DEBUG] _on_output_audio_level sending output_audio_level_db: {output_audio_level_db}")
-            # Notify API/server of output audio level update
         if self.state_update_callback:
             self.state_update_callback({"type": "update_audio_level", "output_audio_level_db": float(output_audio_level_db)})
-        # else:
-        #     if self.debug:
-                # print(f"[DEBUG] _on_output_audio_level throttled output_audio_level_db: {output_audio_level_db}")
 
     def _cleanup(self):
         if self.leds:

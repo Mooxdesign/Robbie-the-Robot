@@ -22,7 +22,7 @@
           <span class="label-muted" style="font-size:0.85rem;">{{ activity.time }}</span>
         </li>
       </ul>
-      <pre>{{ allState }}</pre>
+      <!--<pre>{{ allState }}</pre>-->
 
     </div>
   </div>
