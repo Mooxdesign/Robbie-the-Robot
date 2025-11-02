@@ -32,19 +32,28 @@ class Joystick:
         try:
             pygame.init()
             pygame.joystick.init()
-            # Get joystick
-            self.joystick = pygame.joystick.Joystick(joystick_id)
-            self.joystick.init()
-            if self.debug:
-                try:
-                    name = self.joystick.get_name()
-                    axes_n = self.joystick.get_numaxes()
-                    btns_n = self.joystick.get_numbuttons()
-                except Exception:
-                    name, axes_n, btns_n = None, 0, 0
-                logger.info(f"Initialized joystick: {name}")
-                logger.info(f"Number of axes: {axes_n}")
-                logger.info(f"Number of buttons: {btns_n}")
+            # Validate joystick id and get joystick
+            count = pygame.joystick.get_count()
+            if count == 0:
+                logger.warning("No joystick devices detected")
+                self.joystick = None
+            else:
+                if joystick_id < 0 or joystick_id >= count:
+                    logger.warning(f"Requested joystick_id {joystick_id} out of range (0..{count-1}), defaulting to 0")
+                    joystick_id = 0
+                self.joystick = pygame.joystick.Joystick(joystick_id)
+            if self.joystick is not None:
+                self.joystick.init()
+                if self.debug:
+                    try:
+                        name = self.joystick.get_name()
+                        axes_n = self.joystick.get_numaxes()
+                        btns_n = self.joystick.get_numbuttons()
+                    except Exception:
+                        name, axes_n, btns_n = None, 0, 0
+                    logger.info(f"Initialized joystick: {name}")
+                    logger.info(f"Number of axes: {axes_n}")
+                    logger.info(f"Number of buttons: {btns_n}")
                 
         except Exception as e:
             logger.exception(f"Failed to initialize joystick: {e}")
@@ -150,34 +159,107 @@ class Joystick:
         """Process a single input tick: pump events, read axes/buttons, emit snapshot if changed."""
         # Process pygame events
         pygame.event.pump()
+        # Detect hot-unplug: if we had a joystick but now count==0, emit disconnect
+        try:
+            dev_count = pygame.joystick.get_count()
+        except Exception:
+            dev_count = -1
+        if self.joystick and dev_count == 0:
+            if self.debug:
+                logger.info("[Joystick] Device unplugged")
+            self.joystick = None
+            self.axis_values = {}
+            self.button_values = {}
+            self._last_axes_snapshot = []
+            self._last_buttons_snapshot = []
+            if self._snapshot_cb:
+                try:
+                    self._snapshot_cb([], [])
+                except Exception:
+                    pass
+            return
+        if not self.joystick:
+            # Hot-plug detection: try to (re)initialize when a device appears
+            try:
+                count = pygame.joystick.get_count()
+            except Exception:
+                count = 0
+            if count > 0:
+                try:
+                    self.joystick = pygame.joystick.Joystick(0)
+                    self.joystick.init()
+                    if self.debug:
+                        try:
+                            name = self.joystick.get_name()
+                            axes_n = self.joystick.get_numaxes()
+                            btns_n = self.joystick.get_numbuttons()
+                        except Exception:
+                            name, axes_n, btns_n = None, 0, 0
+                        logger.info(f"[Joystick] Hot-plugged: {name} | axes={axes_n} buttons={btns_n}")
+                    # Reset state and force an initial snapshot
+                    try:
+                        axes_n = self.joystick.get_numaxes()
+                        btns_n = self.joystick.get_numbuttons()
+                    except Exception:
+                        axes_n, btns_n = 0, 0
+                    self.axis_values = {i: 0.0 for i in range(axes_n)}
+                    self.button_values = {i: False for i in range(btns_n)}
+                    self._last_axes_snapshot = []  # force emit
+                    self._last_buttons_snapshot = []
+                    if self._snapshot_cb:
+                        try:
+                            self._snapshot_cb([0.0]*axes_n, [False]*btns_n)
+                        except Exception:
+                            pass
+                except Exception:
+                    # Leave joystick as None and return until next tick
+                    return
+            else:
+                return
         with self._lock:
             # Process axes
-            num_axes = self.joystick.get_numaxes()
-            for i in range(num_axes):
-                value = self.joystick.get_axis(i)
-                # Apply deadzone only to stick axes (0..3)
-                if i < 4 and abs(value) < DEADZONE:
-                    value = 0.0
-                # Store raw value
-                self.axis_values[i] = value
-                # Call handler if registered
-                if i in self.axis_handlers:
-                    handler = self.axis_handlers[i]
-                    if handler['smooth']:
-                        value = (value * (1 - smoothing) + handler['last_value'] * smoothing)
-                        handler['last_value'] = value
-                    handler['handler'](value)
+            try:
+                num_axes = self.joystick.get_numaxes()
+                for i in range(num_axes):
+                    value = self.joystick.get_axis(i)
+                    # Apply deadzone only to stick axes (0..3)
+                    if i < 4 and abs(value) < DEADZONE:
+                        value = 0.0
+                    # Store raw value
+                    self.axis_values[i] = value
+                    # Call handler if registered
+                    if i in self.axis_handlers:
+                        handler = self.axis_handlers[i]
+                        if handler['smooth']:
+                            value = (value * (1 - smoothing) + handler['last_value'] * smoothing)
+                            handler['last_value'] = value
+                        handler['handler'](value)
 
-            # Process buttons
-            num_buttons = self.joystick.get_numbuttons()
-            for i in range(num_buttons):
-                value = bool(self.joystick.get_button(i))
-                if value != self.button_values.get(i, False):
-                    self.button_values[i] = value
-                    if self.debug:
-                        logger.info(f"[Joystick] button {i} {'down' if value else 'up'}")
-                    if i in self.button_handlers:
-                        self.button_handlers[i](value)
+                # Process buttons
+                num_buttons = self.joystick.get_numbuttons()
+                for i in range(num_buttons):
+                    value = bool(self.joystick.get_button(i))
+                    if value != self.button_values.get(i, False):
+                        self.button_values[i] = value
+                        if self.debug:
+                            logger.info(f"[Joystick] button {i} {'down' if value else 'up'}")
+                        if i in self.button_handlers:
+                            self.button_handlers[i](value)
+            except Exception:
+                # Treat as device loss
+                if self.debug:
+                    logger.info("[Joystick] Read failed, assuming disconnect")
+                self.joystick = None
+                self.axis_values = {}
+                self.button_values = {}
+                self._last_axes_snapshot = []
+                self._last_buttons_snapshot = []
+                if self._snapshot_cb:
+                    try:
+                        self._snapshot_cb([], [])
+                    except Exception:
+                        pass
+                return
 
             # Periodic debug log of full axes snapshot
             if self.debug:

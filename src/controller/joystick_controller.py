@@ -25,6 +25,9 @@ class JoystickController:
         self._thread: threading.Thread | None = None
         self._running = False
         self._jm: JoystickModule | None = None
+        self._last_axes: List[float] | None = None
+        self._last_buttons: List[bool] | None = None
+        self._last_emit_ts: float = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -64,19 +67,33 @@ class JoystickController:
             return
 
         # Poll the module once per tick; this mirrors the REPL exactly in this thread
+        import time
         while self._running:
             try:
                 jm.process_once()
+            except Exception:
+                pass
+            # keepalive: if we have a last snapshot, re-emit every 1s
+            try:
+                if self._last_axes is not None and (time.time() - self._last_emit_ts) > 1.0:
+                    self._forward_snapshot(self._last_axes, self._last_buttons or [])
             except Exception:
                 pass
             time.sleep(self.poll_dt)
 
     def _forward_snapshot(self, axes: List[float], buttons: List[bool]) -> None:
         try:
-            try:
-                logger.info(f"[JoystickController][fwd] axes={axes[:6]} (len={len(axes)}), buttons_on={[i for i,b in enumerate(buttons) if b]}")
-            except Exception:
-                pass
-            self.on_update({'joystick': {'axes': axes, 'buttons': buttons}})
+            self._last_axes = list(axes) if axes is not None else []
+            self._last_buttons = list(buttons) if buttons is not None else []
+            import time as _t
+            self._last_emit_ts = _t.time()
+            payload = {
+                'joystick': {
+                    'connected': bool(self._last_axes) or bool(self._last_buttons),
+                    'axes': self._last_axes,
+                    'buttons': self._last_buttons,
+                }
+            }
+            self.on_update(payload)
         except Exception:
             pass

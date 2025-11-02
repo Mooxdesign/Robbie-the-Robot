@@ -6,6 +6,7 @@ import time
 import threading
 from typing import Optional, Dict, Tuple
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,9 @@ if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
     from adafruit_servokit import ServoKit
     logger.info("Motor/servo hardware detected")
 else:
-    logger.info("No motor/servo hardware detected - running in simulation mode")
-    from simulation.hardware import (
-        SimulatedMotorKit as MotorKit,
-        SimulatedServoKit as ServoKit
-    )
+    logger.info("No motor/servo hardware detected - hardware control disabled")
+    MotorKit = None  # type: ignore
+    ServoKit = None  # type: ignore
 
 class MotorModule:
     """
@@ -58,15 +57,15 @@ class MotorModule:
         # Initialize hardware
         try:
             if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
-                self.motor_kit = MotorKit(i2c=board.I2C())
-                self.servo_kit = ServoKit(channels=16)
+                self.motor_kit = MotorKit(i2c=board.I2C()) if MotorKit else None
+                self.servo_kit = ServoKit(channels=16) if ServoKit else None
             else:
-                self.motor_kit = MotorKit()
-                self.servo_kit = ServoKit()
-                
+                self.motor_kit = None
+                self.servo_kit = None
+
             if self.debug:
                 logger.info("Motor controller initialized")
-                
+
         except Exception as e:
             logger.error(f"Failed to initialize motor controller: {e}")
             self.motor_kit = None
@@ -98,13 +97,11 @@ class MotorModule:
             self.target_left = max(min(left, self.max_speed), -self.max_speed)
             self.target_right = max(min(right, self.max_speed), -self.max_speed)
             
-            # Set speeds immediately in simulation mode
-            if not (MOTORS_AVAILABLE or SERVOS_AVAILABLE):
+            # If hardware is present, throttle updates happen in _update_loop.
+            # When no hardware, update current speeds immediately so telemetry reflects targets.
+            if not self.motor_kit:
                 self.left_speed = self.target_left
                 self.right_speed = self.target_right
-                if self.motor_kit:
-                    self.motor_kit.motor1.throttle = self.left_speed
-                    self.motor_kit.motor2.throttle = self.right_speed
 
     def stop(self):
         """Stop all motors"""
@@ -163,11 +160,26 @@ class MotorModule:
         if self.update_thread:
             self.update_thread.join()
             
-        # Stop motors
+        # Stop motors (all four channels if available)
         if self.motor_kit:
-            self.motor_kit.motor1.throttle = 0
-            self.motor_kit.motor2.throttle = 0
+            try:
+                self.motor_kit.motor1.throttle = 0
+                self.motor_kit.motor2.throttle = 0
+                self.motor_kit.motor3.throttle = 0
+                self.motor_kit.motor4.throttle = 0
+            except Exception:
+                pass
             
+    def snapshot(self) -> dict:
+        """Return a thread-safe snapshot of motor targets and current speeds."""
+        with self._lock:
+            return {
+                'target_left': float(self.target_left),
+                'target_right': float(self.target_right),
+                'left_speed': float(self.left_speed),
+                'right_speed': float(self.right_speed),
+            }
+
     @property
     def left_arm_position(self) -> float:
         """Return the last set left arm position (0 to 1)."""
@@ -221,10 +233,20 @@ class MotorModule:
                 else:
                     self.right_speed = self.target_right
                     
-                # Set motor speeds
+                # Set motor speeds (mirror to 4 channels)
                 if self.motor_kit:
-                    self.motor_kit.motor1.throttle = self.left_speed
-                    self.motor_kit.motor2.throttle = self.right_speed
+                    try:
+                        self.motor_kit.motor1.throttle = self.left_speed
+                        self.motor_kit.motor3.throttle = self.left_speed
+                        self.motor_kit.motor2.throttle = self.right_speed
+                        self.motor_kit.motor4.throttle = self.right_speed
+                    except Exception:
+                        # If some channels aren't available, best-effort set the primary pair
+                        try:
+                            self.motor_kit.motor1.throttle = self.left_speed
+                            self.motor_kit.motor2.throttle = self.right_speed
+                        except Exception:
+                            pass
                     
             # Sleep to maintain update rate
             time.sleep(1 / self.update_rate)

@@ -21,6 +21,10 @@
     <JoystickVisualizer />
   </SectionCard>
 
+  <SectionCard title="Motors">
+    <Motors />
+  </SectionCard>
+
 
   <SectionCard title="Debug Console">
     <DebugConsole />
@@ -46,6 +50,7 @@ import LedMatrix from '../components/LedMatrix.vue';
 import JoystickVisualizer from '../components/JoystickVisualizer.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import DebugConsole from '../components/DebugConsole.vue';
+import Motors from '../components/Motors.vue';
 import { onMounted } from 'vue'
 import { api } from '../services/api'
 import { useRobotState } from '@/stores/robotState'

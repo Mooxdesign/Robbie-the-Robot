@@ -29,6 +29,7 @@ export const useRobotState = defineStore('robotState', () => {
   // LED matrix state
   const ledMatrix = ref<any[][]>([])
   const joystick = ref<any>({ axes: [], buttons: [] })
+  const motor = ref<any>({ enabled: false, mode: 'arcade', target_left: 0, target_right: 0, left_speed: 0, right_speed: 0 })
 
   // Actions (global functions)
   // UI actions only emit commands, never mutate state directly
@@ -81,6 +82,7 @@ export const useRobotState = defineStore('robotState', () => {
     if (state.led_animation !== undefined) ledAnimationState.value = state.led_animation;
     if (state.led_matrix !== undefined) ledMatrix.value = state.led_matrix;
     if (state.joystick !== undefined) joystick.value = state.joystick;
+    if (state.motor !== undefined) motor.value = state.motor;
     // NEW: Update chatMessages if present
     if (Array.isArray(state.chat_history)) {
       chatMessages.value = state.chat_history.slice()
@@ -97,6 +99,7 @@ export const useRobotState = defineStore('robotState', () => {
     ledAnimationState,
     ledMatrix,
     joystick,
+    motor,
     // Actions
     wakeRobot, setRobotName, setMaxSpeed, setSensorUpdateRate, setSensorThreshold, setPidP, setPidI, setPidD, updateFromBackend
   }

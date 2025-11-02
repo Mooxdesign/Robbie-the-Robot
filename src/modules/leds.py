@@ -20,13 +20,9 @@ logger = logging.getLogger(__name__)
 if LED_AVAILABLE:
     from unicorn_hat import UnicornHATMini
     logger.info("Unicorn HAT Mini detected")
-else:
-    logger.info("No LED matrix detected - running in simulation mode")
-    from simulation.hardware import SimulatedUnicornHATMini as UnicornHATMini
-
 class LedsModule:
     """
-    Handles direct interaction with the LED hardware (Unicorn HAT Mini or simulation),
+    Handles direct interaction with the LED hardware (Unicorn HAT Mini),
     buffer management, and thread safety. All higher-level control and pattern logic
     should be handled by LedsController and LedsAnimations.
     """

@@ -4,6 +4,8 @@ from config import Config
 from modules.vision import VisionModule
 from modules.audio import AudioModule
 from controller.leds_controller import LedsController
+from modules.motor import MotorModule
+from .drive_controller import DriveController
 from enum import Enum, auto
 from typing import Optional, Callable
 import logging
@@ -37,6 +39,8 @@ class RobotController:
         self.conversation = ConversationController(debug=debug)
         self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
+        self.motors = MotorModule(debug=debug)
+        self.drive = DriveController(self.motors, debug=debug)
 
         # Joystick controller (publishes via state_update_callback)
         self.joystick: JoystickController | None = JoystickController(
@@ -174,8 +178,15 @@ class RobotController:
                 js = update['joystick'] or {}
                 axes = js.get('axes') or []
                 buttons = js.get('buttons') or []
-                on_idx = [i for i, b in enumerate(buttons) if b]
-                logger.info(f"[RobotController][recv] axes={axes[:6]} (len={len(axes)}), buttons_on={on_idx}")
+                try:
+                    self.drive.on_joystick_update(axes, buttons)
+                    # Attach motor telemetry for API/UI
+                    motor_snapshot = self.motors.snapshot()
+                    motor_snapshot['enabled'] = bool(self.drive.is_enabled())
+                    motor_snapshot['mode'] = 'arcade'
+                    update['motor'] = motor_snapshot
+                except Exception:
+                    pass
         except Exception:
             pass
         if self.state_update_callback:
@@ -197,3 +208,8 @@ class RobotController:
             self.audio.cleanup()
         if self.joystick:
             self.joystick.cleanup()
+        if hasattr(self, 'motors') and self.motors:
+            try:
+                self.motors.cleanup()
+            except Exception:
+                pass
