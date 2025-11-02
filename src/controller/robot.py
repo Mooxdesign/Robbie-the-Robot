@@ -34,9 +34,19 @@ class RobotController:
         self.debug = debug
         self._state = RobotState.STANDBY
         self.audio = AudioModule(debug=debug)
-        self.speech = SpeechController(self, self.audio, debug=debug)
-        self.audio.add_output_audio_level_callback(self._on_output_audio_level)
-        self.conversation = ConversationController(debug=debug)
+        # Minimal switch to disable voice stack on low-power devices
+        voice_enabled = True
+        try:
+            voice_enabled = bool(self.config.get('features', 'voice_enabled', default=True))
+        except Exception:
+            voice_enabled = True
+        if voice_enabled:
+            self.speech = SpeechController(self, self.audio, debug=debug)
+            self.audio.add_output_audio_level_callback(self._on_output_audio_level)
+            self.conversation = ConversationController(debug=debug)
+        else:
+            self.speech = None
+            self.conversation = None
         self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
         self.motors = MotorModule(debug=debug)
