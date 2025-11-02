@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, Set
 import logging
 import time
+import os
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -39,11 +40,28 @@ main_event_loop = None
 def robot_state_update_callback(update: dict):
     # Called by RobotController when state changes
     # Merge update into global robot_state and broadcast
+    try:
+        if 'joystick' in update:
+            js = update.get('joystick') or {}
+            axes = (js.get('axes') or [])
+            buttons = (js.get('buttons') or [])
+            on_idx = [i for i, b in enumerate(buttons) if b]
+            logging.info(f"[API][recv] axes={axes[:6]} (len={len(axes)}), buttons_on={on_idx}")
+    except Exception:
+        pass
     robot_state.update({k: v for k, v in update.items() if k in robot_state})
     # Broadcast full robot_state to all clients
     try:
         global main_event_loop
         if main_event_loop and main_event_loop.is_running():
+            try:
+                js = robot_state.get('joystick') or {}
+                axes = (js.get('axes') or [])
+                buttons = (js.get('buttons') or [])
+                on_idx = [i for i, b in enumerate(buttons) if b]
+                logging.info(f"[API][send] axes={axes[:6]} (len={len(axes)}), buttons_on={on_idx}")
+            except Exception:
+                pass
             asyncio.run_coroutine_threadsafe(manager.broadcast(json.dumps(robot_state)), main_event_loop)
         else:
             logger.error("Main event loop is not running or not set.")
@@ -123,7 +141,8 @@ robot_state = {
     "led_matrix": [],  # 8x4 RGB LED matrix state (list of lists)
     "led_animation": {},  # Animation state: {currentAnimation, loop}
     "chat_history": [],  # Full chat history: list of {sender, text}
-    "robot_state": "standby"  # Current robot state (standby, listening, etc.)
+    "robot_state": "standby",  # Current robot state (standby, listening, etc.)
+    "joystick": {"axes": [], "buttons": []}
 }
 
 # --- LED Matrix State Integration ---

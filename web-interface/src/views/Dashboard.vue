@@ -17,6 +17,11 @@
   </SectionCard>
 
 
+  <SectionCard title="Controller Input">
+    <JoystickVisualizer />
+  </SectionCard>
+
+
   <SectionCard title="Debug Console">
     <DebugConsole />
   </SectionCard>
@@ -38,6 +43,7 @@ import RobotControl from '../components/RobotControl.vue';
 import AudioLevels from '../components/AudioLevels.vue';
 import StereoMixDevice from '../components/StereoMixDevice.vue';
 import LedMatrix from '../components/LedMatrix.vue';
+import JoystickVisualizer from '../components/JoystickVisualizer.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import DebugConsole from '../components/DebugConsole.vue';
 import { onMounted } from 'vue'

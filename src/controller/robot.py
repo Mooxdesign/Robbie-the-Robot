@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 from .state import RobotState
 from .speech import SpeechController
+from .joystick_controller import JoystickController
 from .conversation import ConversationController
 
 robot_instance = None
@@ -37,6 +38,14 @@ class RobotController:
         self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
 
+        # Joystick controller (publishes via state_update_callback)
+        self.joystick: JoystickController | None = JoystickController(
+            on_update=self._on_controller_update,
+            joystick_id=0,
+            poll_hz=60.0,
+            debug=debug,
+        )
+
         # Register global instance for API access
         global robot_instance
         robot_instance = self
@@ -46,6 +55,9 @@ class RobotController:
             logger.info("Starting robot...")
         # Enter standby mode and begin wake word detection
         self._return_to_standby()
+        # Start joystick after state is initialized
+        if self.joystick:
+            self.joystick.start()
 
     def stop(self):
         if self.debug:
@@ -153,6 +165,25 @@ class RobotController:
         if self.state_update_callback:
             self.state_update_callback({"type": "update_audio_level", "output_audio_level_db": float(output_audio_level_db)})
 
+    def _on_controller_update(self, update: dict):
+        """Forward controller updates (e.g., joystick) to API callback."""
+        if not update:
+            return
+        try:
+            if 'joystick' in update:
+                js = update['joystick'] or {}
+                axes = js.get('axes') or []
+                buttons = js.get('buttons') or []
+                on_idx = [i for i, b in enumerate(buttons) if b]
+                logger.info(f"[RobotController][recv] axes={axes[:6]} (len={len(axes)}), buttons_on={on_idx}")
+        except Exception:
+            pass
+        if self.state_update_callback:
+            try:
+                self.state_update_callback(update)
+            except Exception:
+                pass
+
     def _cleanup(self):
         if self.leds:
             self.leds.cleanup()
@@ -164,3 +195,5 @@ class RobotController:
             self.vision.cleanup()
         if self.audio:
             self.audio.cleanup()
+        if self.joystick:
+            self.joystick.cleanup()
