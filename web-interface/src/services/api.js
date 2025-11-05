@@ -1,5 +1,5 @@
 import axios from 'axios';
-
+console.log("API_HOST:", process.env.VUE_APP_API_HOST);
 const API_HOST = process.env.VUE_APP_API_HOST || 'http://localhost:8000';
 const API_URL = `${API_HOST}/api`;
 
