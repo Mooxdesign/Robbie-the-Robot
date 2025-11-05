@@ -3,8 +3,9 @@
 import threading
 import queue
 import numpy as np
-import whisper
 import platform
+if platform.machine() not in ('armv6l', 'armv7l', 'aarch64'):
+    import whisper
 try:
     from google.cloud import speech as google_speech
 except ImportError:
