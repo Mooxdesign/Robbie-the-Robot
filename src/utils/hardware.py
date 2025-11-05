@@ -73,8 +73,8 @@ def check_unicorn_hat() -> bool:
             logger.info("No hardware detected: Running in simulation mode.")
             return False
             
-        # Check if SPI is enabled
-        return os.path.exists('/dev/spidev0.0')
+        # Check if SPI is enabled (support both common device names)
+        return os.path.exists('/dev/spidev0.0') or os.path.exists('/dev/spidev10.0')
         
     except Exception as e:
         logger.error(f"Failed to check Unicorn HAT: {e}")
