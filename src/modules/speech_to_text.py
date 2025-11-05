@@ -21,6 +21,8 @@ from .audio import AudioModule
 
 class SpeechToTextModule:
     """Speech-to-text conversion using Whisper or Google STT (Pi Zero)"""
+    def __init__(self, *args, **kwargs):
+        self._transcription_callbacks = []
     def add_input_audio_level_callback(self, callback):
         """Register a callback for real-time input audio level (dB) via AudioModule."""
         if hasattr(self, 'audio') and hasattr(self.audio, 'add_input_audio_level_callback'):
@@ -86,17 +88,24 @@ class SpeechToTextModule:
             if self.debug:
                 logger.info(f"[SpeechToTextModule] Backend explicitly set to {self.backend}")
         else:
-            self.backend = "whisper"
-            if self._is_pi_zero() and google_speech is not None:
-            # if google_speech is not None:
+            # Only set to whisper if whisper is imported
+            if 'whisper' in globals():
+                self.backend = "whisper"
+                if self._is_pi_zero() and google_speech is not None:
+                    self.backend = "google"
+                    logger.info("[SpeechToTextModule] Using backend: google (auto-detected)")
+                    if self.debug:
+                        logger.info("[SpeechToTextModule] Pi Zero detected, using Google STT backend.")
+                else:
+                    logger.info("[SpeechToTextModule] Using backend: whisper (default)")
+                    if self.debug:
+                        logger.info("[SpeechToTextModule] Using Whisper backend.")
+            elif google_speech is not None:
                 self.backend = "google"
-                logger.info("[SpeechToTextModule] Using backend: google (auto-detected)")
-                if self.debug:
-                    logger.info("[SpeechToTextModule] Pi Zero detected, using Google STT backend.")
+                logger.info("[SpeechToTextModule] Using backend: google (fallback, no whisper)")
             else:
-                logger.info("[SpeechToTextModule] Using backend: whisper (default)")
-                if self.debug:
-                    logger.info("[SpeechToTextModule] Using Whisper backend.")
+                logger.error("[SpeechToTextModule] No available STT backend (neither whisper nor google_speech found)")
+                self.backend = None
 
         # Whisper model setup
         if self.backend == "whisper":
