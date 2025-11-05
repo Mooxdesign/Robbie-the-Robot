@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     api_enabled = args.api
-    robot = RobotController(debug=True, api_enabled=api_enabled)
+    try:
+        robot = RobotController(debug=True, api_enabled=api_enabled)
+    except Exception as e:
+        logger.error("[INIT] Exception during RobotController initialization!", exc_info=True)
+        raise
 
     if api_enabled:
         # Set up API callbacks

@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SpeechController:
-    def __init__(self, parent, audio_module, debug=False):
+    def __init__(self, parent, audio_module, debug=False, backend=None):
         import os
         self.parent = parent  # Reference to RobotController
         self.debug = debug
@@ -35,11 +35,23 @@ class SpeechController:
                 logger.info("No Picovoice access key found. Wake word detection disabled.")
         self.speech_to_text = SpeechToTextModule(
             audio_module=audio_module,
-            debug=debug
+            debug=debug,
+            backend=backend
         )
         self.voice = VoiceModule(debug=debug)
         # Register callbacks (only once)
         self._callbacks_registered = False
+        self._register_callbacks()
+
+    def set_backend(self, backend: str):
+        """Switch the speech-to-text backend at runtime."""
+        if self.speech_to_text:
+            self.speech_to_text.cleanup()
+        self.speech_to_text = SpeechToTextModule(
+            audio_module=self.parent.audio,
+            debug=self.debug,
+            backend=backend
+        )
         self._register_callbacks()
 
     def _register_callbacks(self):

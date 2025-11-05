@@ -40,13 +40,19 @@ class RobotController:
             voice_enabled = bool(self.config.get('features', 'voice_enabled', default=True))
         except Exception:
             voice_enabled = True
+        self._speech_backend = None
         if voice_enabled:
-            self.speech = SpeechController(self, self.audio, debug=debug)
+            self.speech = SpeechController(self, self.audio, debug=debug, backend=self._speech_backend)
             self.audio.add_output_audio_level_callback(self._on_output_audio_level)
             self.conversation = ConversationController(debug=debug)
-        else:
-            self.speech = None
-            self.conversation = None
+        # Other subsystems (example):
+        # self.leds = LedsController(self.audio, debug=debug)
+        # self.vision = VisionModule(debug=debug)
+        # self.motors = MotorModule(debug=debug)
+        # self.drive = DriveController(self.motors, debug=debug)
+        # self.joystick = JoystickController(on_update=self._on_controller_update, joystick_id=0, poll_hz=60.0)
+        # (Uncomment and adjust above lines as per your actual initialization logic)
+
         self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
         self.motors = MotorModule(debug=debug)

@@ -142,6 +142,15 @@ export const api = {
         });
     },
     
+    async setSpeechBackend(backend) {
+        try {
+            const response = await axios.post(`${API_URL}/speech/backend`, { backend });
+            return response.data;
+        } catch (error) {
+            console.error('Error setting speech backend:', error);
+            throw error;
+        }
+    },
     async getStatus() {
         try {
             const response = await axios.get(`${API_URL}/status`);
