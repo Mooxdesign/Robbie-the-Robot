@@ -81,7 +81,7 @@ class LedsModule:
     def set_all(self, r: int, g: int, b: int):
         """Set all pixels to the same color"""
         self.requested_color = (r, g, b)
-        brightness = getattr(self.unicorn, 'brightness', 1.0) if hasattr(self, 'unicorn') and self.unicorn else 1.0
+        brightness = self.unicorn.get_brightness() if hasattr(self, 'unicorn') and self.unicorn and hasattr(self.unicorn, 'get_brightness') else 1.0
         scaled = (round(r * brightness), round(g * brightness), round(b * brightness))
         self.current_color = scaled
         with self._lock:
