@@ -70,3 +70,5 @@ uvicorn==0.38.0
 websockets==15.0.1
 wsproto==1.2.0
 google-cloud-speech==2.26.0
+adafruit-circuitpython-motorkit
+adafruit-circuitpython-servokit
