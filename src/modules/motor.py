@@ -250,20 +250,14 @@ class MotorModule:
                     
                 # Set motor speeds (mirror to 4 channels)
                 if self.motor_kit:
-                        try:
-                            logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
-                            self.motor_kit.motor1.throttle = self.left_speed
-                            self.motor_kit.motor2.throttle = self.right_speed
-                        except Exception:
-                            logger.error("[MOTOR] Failed to set any motor throttle!")
-                            pass
+                    try:
+                        logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
+                        self.motor_kit.motor1.throttle = self.left_speed
+                        self.motor_kit.motor2.throttle = self.right_speed
+                    except Exception:
+                        logger.error("[MOTOR] Failed to set any motor throttle!")
+                        pass
                     self._last_hw_left = self.left_speed
                     self._last_hw_right = self.right_speed
-                            except Exception:
-                                logger.error("[MOTOR] Failed to set any motor throttle!")
-                                pass
-                        self._last_hw_left = self.left_speed
-                        self._last_hw_right = self.right_speed
-                    
             # Sleep to maintain update rate
             time.sleep(1 / self.update_rate)
