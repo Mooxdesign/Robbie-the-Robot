@@ -51,7 +51,7 @@ class MotorModule:
         
         # DC motor settings
         self.max_speed = config.get('motor', 'dc_motors', 'max_speed', default=1.0)
-        self.acceleration = config.get('motor', 'dc_motors', 'acceleration', default=0.1)
+        self.acceleration = config.get('motor', 'dc_motors', 'acceleration', default=1.0)
         self.update_rate = config.get('motor', 'dc_motors', 'update_rate', default=50)
         
         # Initialize hardware
@@ -250,21 +250,15 @@ class MotorModule:
                     
                 # Set motor speeds (mirror to 4 channels)
                 if self.motor_kit:
-                    # Only log and update if throttle values changed
-                    if (not hasattr(self, '_last_hw_left') or not hasattr(self, '_last_hw_right') or
-                        self.left_speed != self._last_hw_left or self.right_speed != self._last_hw_right):
                         try:
-                            logger.info(f"[MOTOR] Setting throttles: left={self.left_speed:.2f}, right={self.right_speed:.2f} (targets: left={self.target_left:.2f}, right={self.target_right:.2f})")
+                            logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
                             self.motor_kit.motor1.throttle = self.left_speed
-                            self.motor_kit.motor3.throttle = self.left_speed
                             self.motor_kit.motor2.throttle = self.right_speed
-                            self.motor_kit.motor4.throttle = self.right_speed
                         except Exception:
-                            # If some channels aren't available, best-effort set the primary pair
-                            try:
-                                logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
-                                self.motor_kit.motor1.throttle = self.left_speed
-                                self.motor_kit.motor2.throttle = self.right_speed
+                            logger.error("[MOTOR] Failed to set any motor throttle!")
+                            pass
+                    self._last_hw_left = self.left_speed
+                    self._last_hw_right = self.right_speed
                             except Exception:
                                 logger.error("[MOTOR] Failed to set any motor throttle!")
                                 pass
