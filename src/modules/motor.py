@@ -253,7 +253,9 @@ class MotorModule:
                     try:
                         logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
                         self.motor_kit.motor1.throttle = self.left_speed
-                        self.motor_kit.motor2.throttle = self.right_speed
+                        self.motor_kit.motor2.throttle = self.left_speed
+                        self.motor_kit.motor3.throttle = self.right_speed
+                        self.motor_kit.motor4.throttle = self.right_speed
                     except Exception:
                         logger.error("[MOTOR] Failed to set any motor throttle!")
                         pass
