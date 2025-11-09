@@ -66,3 +66,48 @@ class DriveController:
             self.motors.set_motor_speeds(left, right)
         except Exception:
             pass
+
+        # Head control (axes[2]=pan, axes[3]=tilt)
+        try:
+            pan_axis = float(axes[2]) if len(axes) > 2 else 0.0
+        except Exception:
+            pan_axis = 0.0
+        try:
+            tilt_axis = float(axes[3]) if len(axes) > 3 else 0.0
+        except Exception:
+            tilt_axis = 0.0
+        pan_cmd = None
+        tilt_cmd = None
+        if abs(pan_axis) >= dz:
+            pan_cmd = pan_axis * 90.0
+        if abs(tilt_axis) >= dz:
+            tilt_cmd = -tilt_axis * 45.0
+        if pan_cmd is not None or tilt_cmd is not None:
+            try:
+                self.motors.move_head(pan=pan_cmd, tilt=tilt_cmd)
+            except Exception:
+                pass
+
+        # Arm control (axes[4]=left, axes[5]=right) mapped from [-1,1] -> [0,1]
+        try:
+            left_arm_axis = float(axes[4]) if len(axes) > 4 else None
+        except Exception:
+            left_arm_axis = None
+        try:
+            right_arm_axis = float(axes[5]) if len(axes) > 5 else None
+        except Exception:
+            right_arm_axis = None
+        if left_arm_axis is not None:
+            if abs(left_arm_axis) >= dz:
+                pos = (left_arm_axis + 1.0) * 0.5
+                try:
+                    self.motors.move_arm('left', pos)
+                except Exception:
+                    pass
+        if right_arm_axis is not None:
+            if abs(right_arm_axis) >= dz:
+                pos = (right_arm_axis + 1.0) * 0.5
+                try:
+                    self.motors.move_arm('right', pos)
+                except Exception:
+                    pass
