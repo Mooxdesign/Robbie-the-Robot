@@ -10,6 +10,8 @@
 
   <SectionCard title="Chat">
     <ChatPanel />
+    
+    <SpeechBackendSelector />
   </SectionCard>
 
   <SectionCard title="LED Matrix">
@@ -51,13 +53,13 @@ import JoystickVisualizer from '../components/JoystickVisualizer.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import DebugConsole from '../components/DebugConsole.vue';
 import Motors from '../components/Motors.vue';
+import SpeechBackendSelector from '../components/SpeechBackendSelector.vue';
 import { onMounted } from 'vue'
 import { api } from '../services/api'
 import { useRobotState } from '@/stores/robotState'
 
 const robot = useRobotState()
 
-// Listen for backend websocket state updates and update Pinia store
 onMounted(() => {
   api.registerStateListener((state) => {
     robot.updateFromBackend(state)

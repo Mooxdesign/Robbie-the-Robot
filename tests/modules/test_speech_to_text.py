@@ -20,7 +20,30 @@ if modules_path not in sys.path:
 from src.modules.speech_to_text import SpeechToTextModule
 from src.modules.audio import AudioModule
 
+import types
+
 class TestSpeechToTextModule(unittest.TestCase):
+    def test_google_stt_backend(self):
+        """Test Google STT backend selection and processing on Pi Zero"""
+        # Patch platform to simulate Pi Zero
+        with patch('platform.uname') as mock_uname, \
+             patch('google.cloud.speech.SpeechClient') as mock_client:
+            mock_uname.return_value = types.SimpleNamespace(machine='armv6l', node='raspberrypi')
+            mock_gclient = mock_client.return_value
+            mock_gclient.recognize.return_value = types.SimpleNamespace(
+                results=[types.SimpleNamespace(alternatives=[types.SimpleNamespace(transcript="hello world")])]
+            )
+            # Patch AudioModule
+            mock_audio = MagicMock(spec=AudioModule)
+            stt = SpeechToTextModule(audio_module=mock_audio, debug=True)
+            self.assertEqual(stt.backend, "google")
+            stt.gcloud_client = mock_gclient
+            stt.is_listening = True
+            # Simulate audio buffer and process
+            stt._audio_buffer = [np.ones(16000, dtype=np.float32)]
+            stt._process_audio()
+            # Should call Google STT recognize
+            mock_gclient.recognize.assert_called()
     def setUp(self):
         """Set up test environment with mocked dependencies"""
         # Patch whisper.load_model

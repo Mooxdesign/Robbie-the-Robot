@@ -3,7 +3,14 @@
 import threading
 import queue
 import numpy as np
-import whisper
+import platform
+if platform.machine() not in ('armv6l', 'armv7l', 'aarch64'):
+    import whisper
+try:
+    from google.cloud import speech as google_speech
+except ImportError:
+    google_speech = None
+import io
 import logging
 from typing import Optional, Callable, Dict, List
 import time
@@ -13,7 +20,9 @@ logger = logging.getLogger(__name__)
 from .audio import AudioModule
 
 class SpeechToTextModule:
-    """Speech-to-text conversion using Whisper"""
+    """Speech-to-text conversion using Whisper or Google STT (Pi Zero)"""
+    def __init__(self, *args, **kwargs):
+        self._transcription_callbacks = []
     def add_input_audio_level_callback(self, callback):
         """Register a callback for real-time input audio level (dB) via AudioModule."""
         if hasattr(self, 'audio') and hasattr(self.audio, 'add_input_audio_level_callback'):
@@ -45,10 +54,10 @@ class SpeechToTextModule:
     
     def __init__(self,
                  audio_module: Optional[AudioModule] = None,
-                #  language: str = "en-US",
                  language: str = "en",
                  debug: bool = False,
-                 whisper_model=None):
+                 whisper_model=None,
+                 backend: Optional[str] = None):
         self._lock = threading.RLock()
         self.transcription_in_progress = False
         """
@@ -58,6 +67,7 @@ class SpeechToTextModule:
             audio_module: AudioModule instance to use for audio handling. If None, creates new instance
             language: Language code for speech recognition
             debug: Enable debug output
+            backend: Explicitly select backend (whisper or google). If None, auto-detect.
         """
         self.debug = debug
         self.language = language
@@ -70,21 +80,56 @@ class SpeechToTextModule:
         # Register audio level callback if needed
         if hasattr(self, 'on_audio_level') and callable(getattr(self, 'on_audio_level')):
             self.audio.add_input_audio_level_callback(self.on_audio_level)
-        # Allow test to inject a mock whisper model
-        if whisper_model is not None:
-            self.whisper = whisper_model
+        
+        # Backend selection
+        if backend is not None:
+            self.backend = backend.lower()
+            logger.info(f"[SpeechToTextModule] Using backend: {self.backend}")
             if self.debug:
-                logger.info("Injected Whisper model (test/mock)")
+                logger.info(f"[SpeechToTextModule] Backend explicitly set to {self.backend}")
         else:
-            try:
-                self.whisper = whisper.load_model("base")
+            # Only set to whisper if whisper is imported
+            if 'whisper' in globals():
+                self.backend = "whisper"
+                if self._is_pi_zero() and google_speech is not None:
+                    self.backend = "google"
+                    logger.info("[SpeechToTextModule] Using backend: google (auto-detected)")
+                    if self.debug:
+                        logger.info("[SpeechToTextModule] Pi Zero detected, using Google STT backend.")
+                else:
+                    logger.info("[SpeechToTextModule] Using backend: whisper (default)")
+                    if self.debug:
+                        logger.info("[SpeechToTextModule] Using Whisper backend.")
+            elif google_speech is not None:
+                self.backend = "google"
+                logger.info("[SpeechToTextModule] Using backend: google (fallback, no whisper)")
+            else:
+                logger.error("[SpeechToTextModule] No available STT backend (neither whisper nor google_speech found)")
+                self.backend = None
+
+        # Whisper model setup
+        if self.backend == "whisper":
+            if whisper_model is not None:
+                self.whisper = whisper_model
                 if self.debug:
-                    logger.info("Whisper model loaded")
-            except Exception as e:
-                logger.error(f"Failed to initialize Whisper: {e}")
-                self.whisper = None
-                return
-            
+                    logger.info("Injected Whisper model (test/mock)")
+            else:
+                try:
+                    self.whisper = whisper.load_model("base")
+                    if self.debug:
+                        logger.info("Whisper model loaded")
+                except Exception as e:
+                    logger.error(f"Failed to initialize Whisper: {e}")
+                    self.whisper = None
+                    return
+        else:
+            self.whisper = None
+            # Google STT client setup
+            if google_speech is not None:
+                self.gcloud_client = google_speech.SpeechClient()
+            else:
+                self.gcloud_client = None
+
         # Speech processing setup
         self.is_listening = False
         self._audio_buffer = []
@@ -108,6 +153,10 @@ class SpeechToTextModule:
         self._stream_id = None
         # Always expose audio_callback for tests
         self.audio_callback = getattr(self, '_test_audio_callback', self._audio_callback)
+
+    def _is_pi_zero(self):
+        # Detect Pi Zero by platform string
+        return "armv6l" in platform.uname().machine or "raspberrypi" in platform.uname().node
 
     def add_transcription_callback(self, callback: Callable[[str], None]):
         """Add callback for transcribed text"""
@@ -387,102 +436,77 @@ class SpeechToTextModule:
             with self._lock:
                 self._audio_buffer = []
             return
-        if not self.whisper:
-            logger.error("[SpeechToTextModule] Whisper model not initialized!")
-            return
         import threading as _threading
         try:
-            # For test compatibility: process if buffer has any audio
             with self._lock:
                 if len(self._audio_buffer) == 0:
                     logger.warning(f"[{_threading.current_thread().name}] No audio buffer to process.")
                     return
-                # Convert buffer to numpy array
                 audio_data = np.concatenate(self._audio_buffer)
-                self._audio_buffer = []  # Clear buffer after reading
-
-            # Ensure mono (if multi-channel)
-            if audio_data.ndim > 1:
-                logger.debug(f"[DEBUG] Converting multi-channel ({audio_data.shape}) audio to mono")
-                audio_data = np.mean(audio_data, axis=1)
-
-            # Ensure float32 in [-1, 1]
-            if audio_data.dtype == np.int16:
-                logger.debug("[DEBUG] Converting int16 to float32 [-1, 1]")
-                audio_data = audio_data.astype(np.float32) / 32768.0
-            elif audio_data.dtype == np.float32:
-                # Check if it's already in [-1, 1]
-                if np.max(np.abs(audio_data)) > 1.01:
-                    logger.warning("[WARNING] Float32 audio not in [-1, 1], normalizing")
-                    audio_data = audio_data / np.max(np.abs(audio_data))
-
-            # Diagnostics: print buffer stats
-            duration_sec = len(audio_data) / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
-            logger.debug(f"[{_threading.current_thread().name}] Audio buffer stats: len={len(audio_data)}, duration={duration_sec:.3f}s, dtype={audio_data.dtype}, min={np.min(audio_data):.4f}, max={np.max(audio_data):.4f}, mean={np.mean(audio_data):.4f}")
-            # Safeguard: skip if too short
-            if duration_sec < 0.5:
-                logger.warning(f"[WARNING] Audio buffer too short ({duration_sec:.3f}s), skipping WAV write and transcription.")
                 self._audio_buffer = []
+            # Ensure mono
+            if audio_data.ndim > 1:
+                audio_data = np.mean(audio_data, axis=1)
+            if audio_data.dtype == np.int16:
+                audio_data = audio_data.astype(np.float32) / 32768.0
+            elif audio_data.dtype == np.float32 and np.max(np.abs(audio_data)) > 1.01:
+                audio_data = audio_data / np.max(np.abs(audio_data))
+            duration_sec = len(audio_data) / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
+            if duration_sec < 0.5:
+                logger.warning(f"[WARNING] Audio buffer too short ({duration_sec:.3f}s), skipping transcription.")
                 return
-            # Resample if needed
             target_rate = self.SAMPLE_RATE
             if hasattr(self, 'device_sample_rate') and self.device_sample_rate and self.device_sample_rate != target_rate:
                 try:
                     import scipy.signal
                     num_samples = int(duration_sec * target_rate)
                     audio_resampled = scipy.signal.resample(audio_data, num_samples)
-                    logger.info(f"[SpeechToTextModule] Resampled audio from {self.device_sample_rate} Hz to {target_rate} Hz (len {len(audio_data)} -> {len(audio_resampled)})")
                     audio_data = audio_resampled
                 except Exception as e:
                     logger.error(f"[SpeechToTextModule] Resample error: {e}")
-            # Save to WAV for offline listening (int16 for easy playback)
-            try:
-                import wave
-                wav_path = "last_transcription_input.wav"
-                # Scale back to int16 for debug WAV
-                audio_int16 = np.clip(audio_data * 32767.0, -32768, 32767).astype(np.int16)
-                with wave.open(wav_path, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)  # int16 = 2 bytes
-                    wf.setframerate(target_rate)
-                    wf.writeframes(audio_int16.tobytes())
-                logger.debug(f"[DEBUG] Saved audio buffer to {wav_path}")
-            except Exception as e:
-                logger.error(f"[DEBUG] Failed to save debug WAV: {e}")
-
-            # Ensure Whisper input is float32 in [-1, 1]
-            if audio_data.dtype != np.float32:
-                audio_data = audio_data.astype(np.float32)
-            audio_data = np.clip(audio_data, -1.0, 1.0)
-
-            logger.debug(f"[{_threading.current_thread().name}] Processing {len(audio_data)} samples.")
-            # Transcribe
-            logger.info(f"[{_threading.current_thread().name}] Transcribing audio... (buffer len: {len(self._audio_buffer)})")
-            try:
-                result = self.whisper.transcribe(audio_data, language=self.language)
-                text = result["text"]
-                logger.info(f"[{_threading.current_thread().name}] Whisper transcription result: '{text}'")
-            except Exception as e:
-                logger.error(f"[{_threading.current_thread().name}] Whisper transcription error: {e}")
-                text = None
+            # Google STT expects 16-bit PCM WAV bytes
+            text = None
+            if self.backend == "whisper":
+                if not self.whisper:
+                    logger.error("[SpeechToTextModule] Whisper model not initialized!")
+                    return
+                try:
+                    result = self.whisper.transcribe(audio_data, language=self.language)
+                    text = result["text"]
+                except Exception as e:
+                    logger.error(f"[{_threading.current_thread().name}] Whisper transcription error: {e}")
+            elif self.backend == "google" and self.gcloud_client is not None:
+                try:
+                    import wave
+                    wav_buf = io.BytesIO()
+                    audio_int16 = np.clip(audio_data * 32767.0, -32768, 32767).astype(np.int16)
+                    with wave.open(wav_buf, 'wb') as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(target_rate)
+                        wf.writeframes(audio_int16.tobytes())
+                    wav_bytes = wav_buf.getvalue()
+                    audio = google_speech.RecognitionAudio(content=wav_bytes)
+                    config = google_speech.RecognitionConfig(
+                        encoding=google_speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                        sample_rate_hertz=target_rate,
+                        language_code=self.language if self.language else "en-US",
+                    )
+                    response = self.gcloud_client.recognize(config=config, audio=audio)
+                    text = " ".join([result.alternatives[0].transcript for result in response.results])
+                except Exception as e:
+                    logger.error(f"[{_threading.current_thread().name}] Google STT error: {e}")
             if text:
-                # Call command callback if text matches a registered command
                 if hasattr(self, 'command_callbacks') and isinstance(self.command_callbacks, dict):
                     cb = self.command_callbacks.get(text)
                     if cb:
                         try:
-                            logger.debug(f"[{_threading.current_thread().name}] Invoking command callback for text: '{text}'")
                             cb()
                         except Exception as e:
                             logger.error(f"[{_threading.current_thread().name}] Error in command callback: {e}")
-                # Notify transcription callbacks
-                logger.debug(f"[{_threading.current_thread().name}] Transcription callbacks: {getattr(self, '_transcription_callbacks', [])}")
                 for callback in getattr(self, '_transcription_callbacks', []):
                     try:
-                        logger.debug(f"[{_threading.current_thread().name}] Invoking transcription callback with text: '{text}' (callback: {callback})")
                         callback(text)
-                    except RuntimeError as e:
-                        logger.error(f"[{_threading.current_thread().name}] RuntimeError in transcription callback: {e}")
                     except Exception as e:
                         logger.error(f"[{_threading.current_thread().name}] Error in transcription callback: {e}")
         except Exception as e:
@@ -490,8 +514,6 @@ class SpeechToTextModule:
         finally:
             with self._lock:
                 self.transcription_in_progress = False
-                logger.debug(f"[{_threading.current_thread().name}] transcription_in_progress set to False (audio processing done)")
-            # Clear audio buffer
             self._audio_buffer = []
             
     def cleanup(self):

@@ -51,26 +51,34 @@ class MotorModule:
         
         # DC motor settings
         self.max_speed = config.get('motor', 'dc_motors', 'max_speed', default=1.0)
-        self.acceleration = config.get('motor', 'dc_motors', 'acceleration', default=0.1)
+        self.acceleration = config.get('motor', 'dc_motors', 'acceleration', default=1.0)
         self.update_rate = config.get('motor', 'dc_motors', 'update_rate', default=50)
         
         # Initialize hardware
-        try:
-            if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
+        self.motor_kit = None
+        self.servo_kit = None
+        if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
+            # Try to initialize MotorKit (DC motors)
+            try:
                 self.motor_kit = MotorKit(i2c=board.I2C()) if MotorKit else None
-                self.servo_kit = ServoKit(channels=16) if ServoKit else None
-            else:
+                if self.debug:
+                    logger.info("MotorKit initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize MotorKit (motors): {e}")
                 self.motor_kit = None
+            # Try to initialize ServoKit (servos)
+            try:
+                self.servo_kit = ServoKit(channels=16) if ServoKit else None
+                if self.debug:
+                    logger.info("ServoKit initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize ServoKit (servos): {e}")
                 self.servo_kit = None
-
-            if self.debug:
-                logger.info("Motor controller initialized")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize motor controller: {e}")
+        else:
+            logger.info("No motor/servo hardware detected - hardware control disabled")
             self.motor_kit = None
             self.servo_kit = None
-            
+
         # Motor state
         self.left_speed = 0
         self.right_speed = 0
@@ -93,10 +101,13 @@ class MotorModule:
             left: Left motor speed (-1 to 1)
             right: Right motor speed (-1 to 1)
         """
+        logger.info("Motor update loop started")
+        logger.info(self.motor_kit)
+
         with self._lock:
             self.target_left = max(min(left, self.max_speed), -self.max_speed)
             self.target_right = max(min(right, self.max_speed), -self.max_speed)
-            
+
             # If hardware is present, throttle updates happen in _update_loop.
             # When no hardware, update current speeds immediately so telemetry reflects targets.
             if not self.motor_kit:
@@ -211,12 +222,16 @@ class MotorModule:
     def _update_loop(self):
         """Update motor speeds with acceleration limiting"""
         last_update = time.time()
-        
+        logger.info("Motor update loop started")
+        logger.info(self.motor_kit)
         while self.is_running:
             current_time = time.time()
             dt = current_time - last_update
             last_update = current_time
-            
+
+            # DEBUG: Log motor kit and speeds every loop
+            logger.info(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}, target_left={self.target_left:.2f}, target_right={self.target_right:.2f}")
+
             # Update speeds with acceleration limiting
             with self._lock:
                 # Left motor
@@ -236,17 +251,15 @@ class MotorModule:
                 # Set motor speeds (mirror to 4 channels)
                 if self.motor_kit:
                     try:
+                        logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
                         self.motor_kit.motor1.throttle = self.left_speed
-                        self.motor_kit.motor3.throttle = self.left_speed
-                        self.motor_kit.motor2.throttle = self.right_speed
+                        self.motor_kit.motor2.throttle = self.left_speed
+                        self.motor_kit.motor3.throttle = self.right_speed
                         self.motor_kit.motor4.throttle = self.right_speed
                     except Exception:
-                        # If some channels aren't available, best-effort set the primary pair
-                        try:
-                            self.motor_kit.motor1.throttle = self.left_speed
-                            self.motor_kit.motor2.throttle = self.right_speed
-                        except Exception:
-                            pass
-                    
+                        logger.error("[MOTOR] Failed to set any motor throttle!")
+                        pass
+                    self._last_hw_left = self.left_speed
+                    self._last_hw_right = self.right_speed
             # Sleep to maintain update rate
             time.sleep(1 / self.update_rate)

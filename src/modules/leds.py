@@ -18,8 +18,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 if LED_AVAILABLE:
-    from unicorn_hat import UnicornHATMini
-    logger.info("Unicorn HAT Mini detected")
+    import unicornhat as unicorn
+    logger.info("Unicorn pHAT detected")
 class LedsModule:
     """
     Handles direct interaction with the LED hardware (Unicorn HAT Mini),
@@ -48,10 +48,11 @@ class LedsModule:
         
         # Initialize LED hardware
         try:
-            self.unicorn = UnicornHATMini()
-            self.unicorn.set_brightness(brightness)
+            self.unicorn = unicorn
+            self.unicorn.set_layout(self.unicorn.PHAT)
+            self.unicorn.brightness(brightness)
             if self.debug:
-                logger.info("LED matrix initialized")
+                logger.info("LED matrix initialized (pHAT)")
         except Exception as e:
             logger.error(f"Failed to initialize LED matrix: {e}")
             self.unicorn = None
@@ -80,7 +81,7 @@ class LedsModule:
     def set_all(self, r: int, g: int, b: int):
         """Set all pixels to the same color"""
         self.requested_color = (r, g, b)
-        brightness = getattr(self.unicorn, 'brightness', 1.0) if hasattr(self, 'unicorn') and self.unicorn else 1.0
+        brightness = self.unicorn.get_brightness() if hasattr(self, 'unicorn') and self.unicorn and hasattr(self.unicorn, 'get_brightness') else 1.0
         scaled = (round(r * brightness), round(g * brightness), round(b * brightness))
         self.current_color = scaled
         with self._lock:

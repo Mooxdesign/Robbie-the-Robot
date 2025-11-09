@@ -16,6 +16,17 @@ app = FastAPI()
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+@app.post('/api/speech/backend')
+def set_speech_backend(data: dict):
+    from controller.robot import robot_instance
+    backend = data.get('backend')
+    if not backend:
+        return JSONResponse(content={"error": "Missing backend parameter"}, status_code=400)
+    if not robot_instance:
+        return JSONResponse(content={"error": "Robot not initialized"}, status_code=500)
+    robot_instance.speech.set_backend(backend)
+    return {"status": "ok", "backend": backend}
+
 @app.get('/api/audio/stereo_mix_devices')
 def get_stereo_mix_devices():
     from controller.robot import robot_instance

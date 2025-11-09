@@ -1,6 +1,7 @@
 import axios from 'axios';
-
-const API_URL = 'http://localhost:8000/api';
+console.log("API_HOST:", process.env.VUE_APP_API_HOST);
+const API_HOST = process.env.VUE_APP_API_HOST || 'http://localhost:8000';
+const API_URL = `${API_HOST}/api`;
 
 export const api = {
     // WebSocket connection
@@ -35,7 +36,9 @@ export const api = {
         if (this.ws) {
             this.ws.close();
         }
-        this.ws = new WebSocket("ws://localhost:8000/ws");
+        const wsHost = API_HOST.replace(/^http:\/\//, '');
+        this.ws = new WebSocket(`ws://${wsHost}/ws`);
+
         this.ws.onopen = () => {
             console.log("[api.js] WebSocket connected");
             if (this.reconnectDelay) {
@@ -142,6 +145,15 @@ export const api = {
         });
     },
     
+    async setSpeechBackend(backend) {
+        try {
+            const response = await axios.post(`${API_URL}/speech/backend`, { backend });
+            return response.data;
+        } catch (error) {
+            console.error('Error setting speech backend:', error);
+            throw error;
+        }
+    },
     async getStatus() {
         try {
             const response = await axios.get(`${API_URL}/status`);
