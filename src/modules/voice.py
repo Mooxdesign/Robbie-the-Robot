@@ -81,7 +81,7 @@ class VoiceModule(threading.Thread):
     def _init_engine(self) -> Optional[pyttsx3.Engine]:
         """Initialize pyttsx3 engine with properties"""
         try:
-            engine = pyttsx3.init()
+            engine = pyttsx3.init(driverName='sapi5')
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
             
@@ -108,8 +108,9 @@ class VoiceModule(threading.Thread):
                 logger.info(f"[VoiceModule] No preferred voice found. Using fallback: {voices[0].name}")
             else:
                 logger.error("[VoiceModule] No voices available for TTS.")
-            # Connect event handlers (avoid 'finished-utterance' to prevent premature completion callbacks)
+            # Connect event handlers
             engine.connect('started-word', self._on_cancel)
+            engine.connect('finished-utterance', self._on_completed)
             logger.info("[VoiceModule] TTS engine initialized")
             return engine
         except Exception as e:
@@ -317,55 +318,66 @@ class VoiceModule(threading.Thread):
             return False
 
     def run(self):
-        """Main speech thread loop"""
+        """Main speech thread loop using a persistent pyttsx3 event loop"""
         self.engine = self._init_engine()
         if not self.engine:
             logger.error("[VoiceModule] TTS engine initialization failed. Exiting speech thread.")
             return  # Exit thread cleanly if engine failed to initialize
 
-        while self._is_alive.is_set():
-            # Wait for speech request
-            while self._say.wait(0.1):
-                self._say.clear()
-                # Process all queued text
-                while not self._cancel.is_set() and len(self._text):
-                    with self._text_lock:
-                        text, blocking = self._text.pop(0)
-                    try:
-                        if self.bypass:
-                            import time
-                            time.sleep(1)  # Simulate time taken to speak
-                            self._notify_completion()
-                        else:
-                            try:
-                                # Clear any residual busy state before starting a new utterance
-                                if self.engine.isBusy():
-                                    self.engine.stop()
-                                time.sleep(0.05)
-                            except Exception:
-                                pass
-                            self.engine.say(text)
-                            logger.info(f"[VoiceModule] Called engine.say() for: '{text}'")
-                            self.engine.runAndWait()
-                            logger.info(f"[VoiceModule] Finished engine.runAndWait() for: '{text}'")
-                            # Some systems/drivers may not emit 'finished-utterance' reliably.
-                            # Proactively notify completion here to avoid getting stuck in 'speaking'.
-                            try:
-                                self._notify_completion()
-                                logger.info("[VoiceModule] Completion notified after runAndWait()")
-                            except Exception as _e:
-                                logger.info(f"[VoiceModule] Completion notify after runAndWait() failed: {_e}")
+        # Start the engine loop in non-blocking mode
+        try:
+            self.engine.startLoop(False)
+        except Exception as e:
+            logger.error(f"[VoiceModule] Failed to start engine loop: {e}")
+            return
 
-                    except Exception as e:
-                        logger.exception(f"[VoiceModule] Error during speech: {e}")
-        # Cleanup
-        if self.engine:
-            try:
-                self.engine.stop()
-            except Exception as e:
-                logger.exception(f"[VoiceModule] Error during cleanup: {e}")
-            try:
-                self.engine.stop()
-            except Exception as e:
-                if self.debug:
-                    logger.exception(f"Error during cleanup: {e}")
+        try:
+            while self._is_alive.is_set():
+                # If asked to say something, drain the queue into engine.say()
+                if self._say.wait(0.05):
+                    self._say.clear()
+                    while not self._cancel.is_set():
+                        with self._text_lock:
+                            if not self._text:
+                                break
+                            text, blocking = self._text.pop(0)
+                        try:
+                            if self.bypass:
+                                time.sleep(1)
+                                self._notify_completion()
+                            else:
+                                self.engine.say(text)
+                                logger.info(f"[VoiceModule] Queued text to engine.say(): '{text}'")
+                                # Blocking mode: wait for queue to empty using iterate
+                                if blocking:
+                                    t_start = time.time()
+                                    while self.engine.isBusy() and self._is_alive.is_set():
+                                        try:
+                                            self.engine.iterate()
+                                        except Exception:
+                                            pass
+                                        time.sleep(0.01)
+                                        # Safety timeout to avoid infinite wait
+                                        if time.time() - t_start > 30:
+                                            logger.warning("[VoiceModule] Blocking wait timeout; breaking")
+                                            break
+                        except Exception as e:
+                            logger.exception(f"[VoiceModule] Error queueing speech: {e}")
+
+                # Pump the engine loop regularly
+                try:
+                    self.engine.iterate()
+                except Exception:
+                    pass
+                time.sleep(0.01)
+        finally:
+            # Cleanup engine loop and engine
+            if self.engine:
+                try:
+                    self.engine.endLoop()
+                except Exception:
+                    pass
+                try:
+                    self.engine.stop()
+                except Exception:
+                    pass
