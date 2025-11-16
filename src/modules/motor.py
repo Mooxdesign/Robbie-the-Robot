@@ -101,7 +101,7 @@ class MotorModule:
             left: Left motor speed (-1 to 1)
             right: Right motor speed (-1 to 1)
         """
-        logger.info("Motor update loop started")
+        logger.debug("Motor update loop started")
         logger.info(self.motor_kit)
 
         with self._lock:
@@ -230,7 +230,7 @@ class MotorModule:
             last_update = current_time
 
             # DEBUG: Log motor kit and speeds every loop
-            logger.info(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}, target_left={self.target_left:.2f}, target_right={self.target_right:.2f}")
+            logger.debug(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}, target_left={self.target_left:.2f}, target_right={self.target_right:.2f}")
 
             # Update speeds with acceleration limiting
             with self._lock:

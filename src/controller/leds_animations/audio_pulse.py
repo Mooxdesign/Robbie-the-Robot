@@ -56,11 +56,7 @@ def _audio_pulse_step(leds: LedsModule, audio_level_db: float):
             h = 1.0 / (x + y + delta + 1)  # Hue from rainbow_blinky
             s = 0.8  # Saturation from rainbow_blinky
             v = gauss[x, y+delta] if height <= width else gauss[x+delta, y]
-            logger.info(f"[AUDIO_PULSE] Pixel ({x},{y}) V: {v:.2f}")
-            logger.info(f"[AUDIO_PULSE] Pixel ({x},{y}) HSV: ({h:.2f}, {s:.2f}, {v:.2f})")
-
             rgb = colorsys.hsv_to_rgb(h, s, v)
-            logger.info(f"[AUDIO_PULSE] Pixel ({x},{y}) RGB (float): {rgb}")
             r = int(rgb[0] * 255.0)
             g = int(rgb[1] * 255.0)
             b = int(rgb[2] * 255.0)

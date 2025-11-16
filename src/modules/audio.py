@@ -77,16 +77,25 @@ class AudioModule:
         Accepts a stop_event to allow clean shutdown when switching devices.
         """
         try:
+            # Use the device's default sample rate to reduce host errors on Windows
+            open_rate = self.default_rate
+            try:
+                if self.output_device_index is not None:
+                    dev_info = self._pyaudio.get_device_info_by_index(self.output_device_index)
+                    open_rate = int(dev_info.get('defaultSampleRate', self.default_rate) or self.default_rate)
+            except Exception:
+                open_rate = self.default_rate
+
             stream = self._pyaudio.open(
                 format=self.default_format,
                 channels=1,
-                rate=self.default_rate,
+                rate=open_rate,
                 input=True,
                 input_device_index=self.output_device_index,
                 frames_per_buffer=self.default_chunk_size
             )
             if self.debug:
-                logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index}")
+                logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index} @ {open_rate} Hz")
             logger.info("[AudioModule] _output_monitor_loop is running.")
             while not stop_event.is_set():
                 data = stream.read(self.default_chunk_size, exception_on_overflow=False)
@@ -99,8 +108,15 @@ class AudioModule:
             if self.debug:
                 logger.info(f"[AudioModule] Output monitor thread stopped for device index {self.output_device_index}")
         except Exception as e:
-            if self.debug:
-                logger.error(f"[AudioModule] Output monitor error: {e}")
+            # Disable monitoring for this session to avoid repeated errors
+            try:
+                if hasattr(self, '_output_monitor_stop_event') and stop_event is not None:
+                    stop_event.set()
+                # Mark device as unavailable to prevent restarts until explicitly changed
+                self.output_device_index = None
+            except Exception:
+                pass
+            logger.warning(f"[AudioModule] Output monitor disabled: {e}")
 
 
     def add_input_audio_level_callback(self, callback: Callable[[float], None]) -> None:
@@ -413,6 +429,8 @@ class AudioModule:
             self._output_monitor_thread = threading.Thread(target=self._output_monitor_loop, args=(self._output_monitor_stop_event,), daemon=True)
             self._output_monitor_thread.start()
             logger.info(f"[AudioModule] Started monitoring output device index {self.output_device_index}")
+        else:
+            logger.info("[AudioModule] No Stereo Mix/loopback device available; output monitoring disabled.")
 
     def get_first_stereo_mix_device_index(self) -> Optional[int]:
         """Compatibility shim: Return the first Stereo Mix device index, or None if unavailable."""

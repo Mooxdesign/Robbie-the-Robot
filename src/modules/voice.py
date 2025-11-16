@@ -108,8 +108,7 @@ class VoiceModule(threading.Thread):
                 logger.info(f"[VoiceModule] No preferred voice found. Using fallback: {voices[0].name}")
             else:
                 logger.error("[VoiceModule] No voices available for TTS.")
-            # Connect event handlers
-            engine.connect('finished-utterance', self._on_completed)
+            # Connect event handlers (avoid 'finished-utterance' to prevent premature completion callbacks)
             engine.connect('started-word', self._on_cancel)
             logger.info("[VoiceModule] TTS engine initialized")
             return engine
@@ -338,10 +337,24 @@ class VoiceModule(threading.Thread):
                             time.sleep(1)  # Simulate time taken to speak
                             self._notify_completion()
                         else:
+                            try:
+                                # Clear any residual busy state before starting a new utterance
+                                if self.engine.isBusy():
+                                    self.engine.stop()
+                                time.sleep(0.05)
+                            except Exception:
+                                pass
                             self.engine.say(text)
                             logger.info(f"[VoiceModule] Called engine.say() for: '{text}'")
                             self.engine.runAndWait()
                             logger.info(f"[VoiceModule] Finished engine.runAndWait() for: '{text}'")
+                            # Some systems/drivers may not emit 'finished-utterance' reliably.
+                            # Proactively notify completion here to avoid getting stuck in 'speaking'.
+                            try:
+                                self._notify_completion()
+                                logger.info("[VoiceModule] Completion notified after runAndWait()")
+                            except Exception as _e:
+                                logger.info(f"[VoiceModule] Completion notify after runAndWait() failed: {_e}")
 
                     except Exception as e:
                         logger.exception(f"[VoiceModule] Error during speech: {e}")

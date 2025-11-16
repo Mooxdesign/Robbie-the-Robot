@@ -245,6 +245,25 @@ class Joystick:
                             logger.info(f"[Joystick] button {i} {'down' if value else 'up'}")
                         if i in self.button_handlers:
                             self.button_handlers[i](value)
+
+                # Process hats (D-pad). Represent each hat as 4 virtual buttons: [up, down, left, right]
+                virtual_hat_buttons = []
+                try:
+                    num_hats = self.joystick.get_numhats()
+                except Exception:
+                    num_hats = 0
+                for h in range(num_hats):
+                    try:
+                        hx, hy = self.joystick.get_hat(h)
+                    except Exception:
+                        hx, hy = 0, 0
+                    # up, down, left, right
+                    virtual_hat_buttons.extend([
+                        bool(hy > 0),
+                        bool(hy < 0),
+                        bool(hx < 0),
+                        bool(hx > 0),
+                    ])
             except Exception:
                 # Treat as device loss
                 if self.debug:
@@ -277,6 +296,8 @@ class Joystick:
             total_axes = self.joystick.get_numaxes()
             axes_list = [self.axis_values.get(j, 0.0) for j in range(total_axes)]
             buttons_list = [self.button_values.get(j, False) for j in range(num_buttons)]
+            if virtual_hat_buttons:
+                buttons_list = buttons_list + virtual_hat_buttons
             if (axes_list != self._last_axes_snapshot) or (buttons_list != self._last_buttons_snapshot):
                 self._last_axes_snapshot = list(axes_list)
                 self._last_buttons_snapshot = list(buttons_list)

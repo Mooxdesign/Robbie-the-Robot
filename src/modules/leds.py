@@ -17,9 +17,15 @@ from utils.hardware import LED_AVAILABLE
 import logging
 logger = logging.getLogger(__name__)
 
+UNICORN_AVAILABLE = False
 if LED_AVAILABLE:
-    import unicornhat as unicorn
-    logger.info("Unicorn pHAT detected")
+    try:
+        import unicornhat as unicorn
+        UNICORN_AVAILABLE = True
+        logger.info("Unicorn pHAT detected")
+    except Exception:
+        UNICORN_AVAILABLE = False
+        logger.warning("Unicorn HAT library not available")
 class LedsModule:
     """
     Handles direct interaction with the LED hardware (Unicorn HAT Mini),
@@ -47,12 +53,18 @@ class LedsModule:
         self.height = Config().get('lights', 'height', default=4)
         
         # Initialize LED hardware
+        self.unicorn = None
         try:
-            self.unicorn = unicorn
-            self.unicorn.set_layout(self.unicorn.PHAT)
-            self.unicorn.brightness(brightness)
-            if self.debug:
-                logger.info("LED matrix initialized (pHAT)")
+            if UNICORN_AVAILABLE:
+                # 'unicorn' is imported at module scope only when LED_AVAILABLE is True
+                self.unicorn = unicorn
+                self.unicorn.set_layout(self.unicorn.PHAT)
+                self.unicorn.brightness(brightness)
+                if self.debug:
+                    logger.info("LED matrix initialized (pHAT)")
+            else:
+                if self.debug:
+                    logger.info("LED hardware not available; running without LED output")
         except Exception as e:
             logger.error(f"Failed to initialize LED matrix: {e}")
             self.unicorn = None
