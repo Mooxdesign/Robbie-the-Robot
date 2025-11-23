@@ -29,7 +29,18 @@ export const useRobotState = defineStore('robotState', () => {
   // LED matrix state
   const ledMatrix = ref<any[][]>([])
   const joystick = ref<any>({ axes: [], buttons: [] })
-  const motor = ref<any>({ enabled: false, mode: 'arcade', target_left: 0, target_right: 0, left_speed: 0, right_speed: 0 })
+  const motor = ref<any>({
+    enabled: false,
+    mode: 'arcade',
+    target_left: 0,
+    target_right: 0,
+    left_speed: 0,
+    right_speed: 0,
+    left_arm_position: 0,
+    right_arm_position: 0,
+    head_pan: 0,
+    head_tilt: 0,
+  })
 
   // Actions (global functions)
   // UI actions only emit commands, never mutate state directly

@@ -6,6 +6,8 @@
         <div class="row"><span class="label">Mode</span><span class="val">{{ motor.mode }}</span></div>
         <div class="row"><span class="label">Target L/R</span><span class="val mono">{{ fmt(motor.target_left) }} / {{ fmt(motor.target_right) }}</span></div>
         <div class="row"><span class="label">Speed L/R</span><span class="val mono">{{ fmt(motor.left_speed) }} / {{ fmt(motor.right_speed) }}</span></div>
+        <div class="row"><span class="label">Arms L/R</span><span class="val mono">{{ fmt(motor.left_arm_position) }} / {{ fmt(motor.right_arm_position) }}</span></div>
+        <div class="row"><span class="label">Head Pan/Tilt</span><span class="val mono">{{ fmt(motor.head_pan) }} / {{ fmt(motor.head_tilt) }}</span></div>
       </div>
       <div class="car">
         <CarGraphic
@@ -28,7 +30,18 @@ import { computed } from 'vue'
 import { useRobotState } from '@/stores/robotState'
 
 const store = useRobotState()
-const motor = computed(() => store.motor || { enabled:false, mode:'arcade', target_left:0, target_right:0, left_speed:0, right_speed:0 })
+const motor = computed(() => store.motor || {
+  enabled: false,
+  mode: 'arcade',
+  target_left: 0,
+  target_right: 0,
+  left_speed: 0,
+  right_speed: 0,
+  left_arm_position: 0,
+  right_arm_position: 0,
+  head_pan: 0,
+  head_tilt: 0,
+})
 
 function fmt(v: any) {
   const n = Number(v)

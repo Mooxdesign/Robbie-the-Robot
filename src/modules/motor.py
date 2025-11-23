@@ -189,6 +189,10 @@ class MotorModule:
                 'target_right': float(self.target_right),
                 'left_speed': float(self.left_speed),
                 'right_speed': float(self.right_speed),
+                'left_arm_position': float(self._left_arm_position),
+                'right_arm_position': float(self._right_arm_position),
+                'head_pan': float(self._head_pan) if self._head_pan is not None else None,
+                'head_tilt': float(self._head_tilt) if self._head_tilt is not None else None,
             }
 
     @property
