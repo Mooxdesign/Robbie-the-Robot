@@ -81,7 +81,12 @@ class VoiceModule(threading.Thread):
     def _init_engine(self) -> Optional[pyttsx3.Engine]:
         """Initialize pyttsx3 engine with properties"""
         try:
-            engine = pyttsx3.init(driverName='sapi5')
+            # Use SAPI5 on Windows, default driver on other platforms
+            import platform
+            if platform.system() == 'Windows':
+                engine = pyttsx3.init(driverName='sapi5')
+            else:
+                engine = pyttsx3.init()
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
             

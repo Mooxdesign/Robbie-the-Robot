@@ -20,13 +20,16 @@ class Config:
             # Get project root directory
             root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             config_path = os.path.join(root_dir, 'config.yaml')
-            
+
+        self.config_path = config_path
+
         # Load config file
         try:
-            with open(config_path, 'r') as f:
-                self.config = yaml.safe_load(f)
+            with open(self.config_path, 'r') as f:
+                loaded = yaml.safe_load(f)
+                self.config = loaded if isinstance(loaded, dict) else {}
         except Exception as e:
-            logger.error(f"Failed to load config from {config_path}: {e}")
+            logger.error(f"Failed to load config from {self.config_path}: {e}")
             self.config = {}
             
     def get(self, *keys: str, default: Any = None) -> Any:
@@ -46,3 +49,41 @@ class Config:
                 return default
             value = value[key]
         return value
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the full configuration dictionary."""
+        return dict(self.config) if isinstance(self.config, dict) else {}
+
+    def _deep_update(self, base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively merge ``updates`` into ``base`` without modifying unrelated keys."""
+        for key, value in updates.items():
+            if (
+                isinstance(value, dict)
+                and isinstance(base.get(key), dict)
+            ):
+                base[key] = self._deep_update(dict(base[key]), value)
+            else:
+                base[key] = value
+        return base
+
+    def update_from_dict(self, updates: Dict[str, Any]) -> None:
+        """Update configuration from a nested dict, then keep it in memory only.
+
+        Call ``save()`` explicitly to persist to disk.
+        """
+        if not isinstance(updates, dict):
+            logger.warning("Config.update_from_dict called with non-dict; ignoring")
+            return
+        if not isinstance(self.config, dict):
+            self.config = {}
+        self.config = self._deep_update(self.config, updates)
+
+    def save(self) -> None:
+        """Persist current configuration to the YAML file on disk."""
+        try:
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            with open(self.config_path, 'w') as f:
+                yaml.safe_dump(self.config, f, sort_keys=False)
+            logger.info(f"Configuration saved to {self.config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save config to {self.config_path}: {e}")

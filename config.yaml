@@ -1,10 +1,8 @@
 robot:
   name: Robbie
   debug: false
-
 features:
   voice_enabled: true
-
 motor:
   dc_motors:
     acceleration: 0.1
@@ -35,39 +33,39 @@ motor:
       max_pulse: 2500
       min_angle: 0
       max_angle: 180
-
 vision:
   camera:
     width: 640
     height: 480
     framerate: 30
   object_detection:
-    model_path: "models/yolov5s.pt"
+    model_path: models/yolov5s.pt
     confidence: 0.5
-    classes: ["person", "cat", "dog"]
-
+    classes:
+    - person
+    - cat
+    - dog
 audio:
   sample_rate: 22050
   channels: 1
   chunk_size: 1024
-
 voice:
-  wake_word: "porcupine"
-  language: "en-US"
+  wake_word: porcupine
+  language: en-US
   speech_rate: 140
-
 ai:
-  model: "gpt-3.5-turbo"
+  model: gpt-3.5-turbo
   temperature: 0.7
   max_tokens: 100
   debug: true
-
 lights:
   width: 8
   height: 4
   max_brightness: 0.5
   update_rate: 30
-
 joystick:
   deadzone: 0.1
   smoothing: 0.2
+sensors:
+  update_rate: 52
+  threshold: 98

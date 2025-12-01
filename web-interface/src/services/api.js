@@ -144,6 +144,44 @@ export const api = {
             config
         });
     },
+
+    async setConfigValue(keyPath, value) {
+        if (!Array.isArray(keyPath) || keyPath.length === 0) {
+            throw new Error('setConfigValue requires a non-empty keyPath array');
+        }
+        const root = {};
+        let current = root;
+        for (let i = 0; i < keyPath.length; i++) {
+            const key = keyPath[i];
+            if (i === keyPath.length - 1) {
+                current[key] = value;
+            } else {
+                current[key] = {};
+                current = current[key];
+            }
+        }
+        return this.updateConfig(root);
+    },
+
+    async getConfig() {
+        try {
+            const response = await axios.get(`${API_URL}/config`);
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching config:', error);
+            throw error;
+        }
+    },
+
+    async updateConfig(partialConfig) {
+        try {
+            const response = await axios.post(`${API_URL}/config`, partialConfig);
+            return response.data;
+        } catch (error) {
+            console.error('Error updating config:', error);
+            throw error;
+        }
+    },
     
     async setSpeechBackend(backend) {
         try {

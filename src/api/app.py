@@ -15,6 +15,7 @@ app = FastAPI()
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from config import Config
 
 @app.post('/api/speech/backend')
 def set_speech_backend(data: dict):
@@ -44,6 +45,43 @@ def cycle_stereo_mix():
     if not device:
         return JSONResponse(content={"error": "No Stereo Mix devices found"}, status_code=404)
     return {"selected_device": device}
+
+
+@app.get('/api/config')
+def get_config():
+    """Return the current configuration as a JSON-serializable dict."""
+    try:
+        cfg = Config()
+        return cfg.to_dict()
+    except Exception as e:
+        logger.error(f"Error loading config in /api/config: {e}")
+        return JSONResponse(content={"error": "Failed to load configuration"}, status_code=500)
+
+
+@app.post('/api/config')
+def update_config(new_config: Dict):
+    """Update configuration from a partial config dict and persist to disk."""
+    try:
+        cfg = Config()
+        if not isinstance(new_config, dict):
+            return JSONResponse(content={"error": "Invalid config payload"}, status_code=400)
+
+        # Merge and save
+        cfg.update_from_dict(new_config)
+        cfg.save()
+
+        # Also update live robot instance if available
+        try:
+            from controller.robot import robot_instance
+            if robot_instance and hasattr(robot_instance, 'config'):
+                robot_instance.config.update_from_dict(new_config)
+        except Exception as e:
+            logger.error(f"Error updating live robot config: {e}")
+
+        return cfg.to_dict()
+    except Exception as e:
+        logger.error(f"Error updating config in /api/config: {e}")
+        return JSONResponse(content={"error": "Failed to update configuration"}, status_code=500)
 
 
 main_event_loop = None
@@ -275,10 +313,32 @@ async def handle_movement(command: Dict):
     logger.info(f"Moving robot: {direction} at speed {speed}")
 
 async def handle_configuration(command: Dict):
-    """Handle robot configuration updates"""
-    config = command.get("config", {})
-    # TODO: Implement actual configuration updates
-    logger.info(f"Updating configuration: {config}")
+    """Handle robot configuration updates coming over WebSocket.
+
+    Expects a payload of the form {"type": "config", "config": {...}} where
+    "config" is a (possibly partial) nested dict matching config.yaml.
+    """
+    updates = command.get("config", {})
+    if not isinstance(updates, dict):
+        logger.warning(f"handle_configuration called with non-dict config: {updates!r}")
+        return
+
+    logger.info(f"[WS] Applying configuration updates: {updates}")
+
+    try:
+        cfg = Config()
+        cfg.update_from_dict(updates)
+        cfg.save()
+    except Exception as e:
+        logger.error(f"[WS] Failed to persist configuration updates: {e}")
+
+    # Try to apply to live robot instance as well
+    try:
+        from controller.robot import robot_instance
+        if robot_instance and hasattr(robot_instance, 'config'):
+            robot_instance.config.update_from_dict(updates)
+    except Exception as e:
+        logger.error(f"[WS] Failed to apply configuration to live robot: {e}")
 
 # Mount the static files (for the frontend)
 import os

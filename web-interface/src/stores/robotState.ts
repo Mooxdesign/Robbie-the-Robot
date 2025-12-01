@@ -14,14 +14,8 @@ export const useRobotState = defineStore('robotState', () => {
   ])
   const inputAudioLevelDb = ref(-100)
   const outputAudioLevelDb = ref(-100)
-  // Config fields
-  const robotName = ref('Robbie')
-  const maxSpeed = ref(500)
-  const sensorUpdateRate = ref(60)
-  const sensorThreshold = ref(100)
-  const pidP = ref(1)
-  const pidI = ref(0.1)
-  const pidD = ref(0.05)
+  // Full config object loaded from /api/config (mirrors config.yaml)
+  const config = ref<any>({})
 
   // LED animation state
   const ledAnimationState = ref({})
@@ -42,32 +36,8 @@ export const useRobotState = defineStore('robotState', () => {
     head_tilt: 0,
   })
 
-  // Actions (global functions)
-  // UI actions only emit commands, never mutate state directly
   function wakeRobot() {
     api.sendCommand({ type: 'wake' })
-    // Do NOT update local state here; backend will emit update
-  }
-  function setRobotName(name: string) {
-    api.sendCommand({ type: 'set_robot_name', value: name })
-  }
-  function setMaxSpeed(value: number) {
-    api.sendCommand({ type: 'set_max_speed', value })
-  }
-  function setSensorUpdateRate(value: number) {
-    api.sendCommand({ type: 'set_sensor_update_rate', value })
-  }
-  function setSensorThreshold(value: number) {
-    api.sendCommand({ type: 'set_sensor_threshold', value })
-  }
-  function setPidP(value: number) {
-    api.sendCommand({ type: 'set_pid_p', value })
-  }
-  function setPidI(value: number) {
-    api.sendCommand({ type: 'set_pid_i', value })
-  }
-  function setPidD(value: number) {
-    api.sendCommand({ type: 'set_pid_d', value })
   }
 
   // --- Chat message history ---
@@ -76,13 +46,6 @@ export const useRobotState = defineStore('robotState', () => {
   // This is the ONLY place state is mutated:
   function updateFromBackend(state: any) {
     // Defensive: update only if present in state
-    if (state.robot_name !== undefined) robotName.value = state.robot_name
-    if (state.max_speed !== undefined) maxSpeed.value = state.max_speed
-    if (state.sensor_update_rate !== undefined) sensorUpdateRate.value = state.sensor_update_rate
-    if (state.sensor_threshold !== undefined) sensorThreshold.value = state.sensor_threshold
-    if (state.pid_p !== undefined) pidP.value = state.pid_p
-    if (state.pid_i !== undefined) pidI.value = state.pid_i
-    if (state.pid_d !== undefined) pidD.value = state.pid_d
     if (state.is_connected !== undefined) isConnected.value = state.is_connected
     if (state.robot_state !== undefined) robotState.value = state.robot_state
     if (state.battery_level !== undefined) batteryLevel.value = state.battery_level
@@ -101,17 +64,27 @@ export const useRobotState = defineStore('robotState', () => {
     // ...add other fields as needed
   }
 
+  async function loadConfigFromBackend() {
+    try {
+      const loaded: any = await api.getConfig()
+      config.value = loaded || {}
+    } catch (e) {
+      console.error('Failed to load config from backend:', e)
+    }
+  }
+
   return {
     // State
     isConnected, robotState, batteryLevel, temperature, recentActivity,
     inputAudioLevelDb, outputAudioLevelDb,
-    robotName, maxSpeed, sensorUpdateRate, sensorThreshold, pidP, pidI, pidD,
+    config,
     chatMessages,
     ledAnimationState,
     ledMatrix,
     joystick,
     motor,
     // Actions
-    wakeRobot, setRobotName, setMaxSpeed, setSensorUpdateRate, setSensorThreshold, setPidP, setPidI, setPidD, updateFromBackend
+    wakeRobot,
+    updateFromBackend, loadConfigFromBackend
   }
 })

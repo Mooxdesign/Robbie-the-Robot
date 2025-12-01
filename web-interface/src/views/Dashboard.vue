@@ -10,8 +10,6 @@
 
   <SectionCard title="Chat">
     <ChatPanel />
-    
-    <SpeechBackendSelector />
   </SectionCard>
 
   <SectionCard title="LED Matrix">
@@ -45,7 +43,6 @@ import SectionCard from '../components/SectionCard.vue';
 import ConfigGeneral from '../components/ConfigGeneral.vue';
 import ConfigSensors from '../components/ConfigSensors.vue';
 import RobotStatus from '../components/RobotStatus.vue';
-import RobotControl from '../components/RobotControl.vue';
 import AudioLevels from '../components/AudioLevels.vue';
 import StereoMixDevice from '../components/StereoMixDevice.vue';
 import LedMatrix from '../components/LedMatrix.vue';
@@ -53,7 +50,6 @@ import JoystickVisualizer from '../components/JoystickVisualizer.vue';
 import ChatPanel from '../components/ChatPanel.vue';
 import DebugConsole from '../components/DebugConsole.vue';
 import Motors from '../components/Motors.vue';
-import SpeechBackendSelector from '../components/SpeechBackendSelector.vue';
 import { onMounted } from 'vue'
 import { api } from '../services/api'
 import { useRobotState } from '@/stores/robotState'
@@ -61,9 +57,10 @@ import { useRobotState } from '@/stores/robotState'
 const robot = useRobotState()
 
 onMounted(() => {
-  api.registerStateListener((state) => {
+  api.registerStateListener((state: any) => {
     robot.updateFromBackend(state)
   })
+  robot.loadConfigFromBackend()
 })
 
 </script>

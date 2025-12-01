@@ -231,7 +231,7 @@ class AudioModule:
                 rms = np.sqrt(np.mean(audio_np ** 2))
                 db = 20 * np.log10(rms + 1e-10)  # add epsilon to avoid log(0)
                 # if self.debug:
-                #     logger.info(f"\rAudio ddevel: {db:.1f} dB", end="")
+                #     logger.info(f"\rAudio level: {db:.1f} dB", end="")
             return (None, pyaudio.paContinue)
         
         # Determine stream type and device index

@@ -72,7 +72,7 @@ class MotorModule:
                 if self.debug:
                     logger.info("ServoKit initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize ServoKit (servos): {e}")
+                logger.warning(f"Failed to initialize ServoKit (servos): {e}. Servo control will be disabled.")
                 self.servo_kit = None
         else:
             logger.info("No motor/servo hardware detected - hardware control disabled")
