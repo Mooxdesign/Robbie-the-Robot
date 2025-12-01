@@ -67,13 +67,13 @@ class DriveController:
         except Exception:
             pass
 
-        # Head control (axes[2]=pan, axes[3]=tilt)
+        # Head control (right thumbstick: axes[3]=pan, axes[4]=tilt)
         try:
-            pan_axis = float(axes[2]) if len(axes) > 2 else 0.0
+            pan_axis = float(axes[3]) if len(axes) > 3 else 0.0
         except Exception:
             pan_axis = 0.0
         try:
-            tilt_axis = float(axes[3]) if len(axes) > 3 else 0.0
+            tilt_axis = float(axes[4]) if len(axes) > 4 else 0.0
         except Exception:
             tilt_axis = 0.0
         pan_cmd = None
@@ -88,9 +88,9 @@ class DriveController:
             except Exception:
                 pass
 
-        # Arm control (axes[4]=left, axes[5]=right) mapped from [-1,1] -> [0,1]
+        # Arm control (axes[2]=left arm, axes[5]=right arm) mapped from [-1,1] -> [0,1]
         try:
-            left_arm_axis = float(axes[4]) if len(axes) > 4 else None
+            left_arm_axis = float(axes[2]) if len(axes) > 2 else None
         except Exception:
             left_arm_axis = None
         try:

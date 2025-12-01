@@ -1,6 +1,6 @@
 robot:
   name: Robbie
-  debug: false
+  debug: true
 features:
   voice_enabled: true
 motor:

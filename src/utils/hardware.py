@@ -87,6 +87,20 @@ def check_motor_controller() -> Tuple[bool, bool]:
     Returns:
         Tuple[bool, bool]: (motor_available, servo_available)
     """
+    # Check for hardware override in config
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__))))
+        from config import Config
+        config = Config()
+        force_enable = config.get('hardware', 'force_enable', default=None)
+        if force_enable is not None:
+            logger.info(f"Hardware override from config: motors={force_enable}, servos={force_enable}")
+            return force_enable, force_enable
+    except Exception as e:
+        logger.debug(f"Could not read hardware config override: {e}")
+    
     # PCA9685 typically uses address 0x40
     return check_i2c_device(0x40), check_i2c_device(0x40)
 

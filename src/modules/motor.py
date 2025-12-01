@@ -57,6 +57,9 @@ class MotorModule:
         # Initialize hardware
         self.motor_kit = None
         self.servo_kit = None
+        
+        logger.info(f"Hardware detection - Motors: {MOTORS_AVAILABLE}, Servos: {SERVOS_AVAILABLE}")
+        
         if MOTORS_AVAILABLE or SERVOS_AVAILABLE:
             # Try to initialize MotorKit (DC motors)
             try:
@@ -71,6 +74,7 @@ class MotorModule:
                 self.servo_kit = ServoKit(channels=16) if ServoKit else None
                 if self.debug:
                     logger.info("ServoKit initialized successfully")
+                logger.info(f"ServoKit created: {self.servo_kit is not None}")
             except Exception as e:
                 logger.warning(f"Failed to initialize ServoKit (servos): {e}. Servo control will be disabled.")
                 self.servo_kit = None
@@ -127,19 +131,23 @@ class MotorModule:
             tilt: Tilt angle in degrees (-45 to 45)
         """
         if not self.servo_kit:
+            logger.warning("move_head called but servo_kit is None")
             return
             
+        logger.info(f"move_head called with pan={pan}, tilt={tilt}")
         with self._lock:
             # Set pan servo (0)
             if pan is not None:
                 # Convert to 0-180 range
                 angle = (pan + 90)  # -90 -> 0, 90 -> 180
+                logger.info(f"Setting pan servo[0] to angle {angle}")
                 self.servo_kit.servo[0].angle = angle
                 self._head_pan = pan
             # Set tilt servo (1)
             if tilt is not None:
                 # Convert to 0-180 range, but limit to -45 to 45
                 angle = (tilt + 45) * 2  # -45 -> 0, 45 -> 180
+                logger.info(f"Setting tilt servo[1] to angle {angle}")
                 self.servo_kit.servo[1].angle = angle
                 self._head_tilt = tilt
                 
@@ -152,16 +160,20 @@ class MotorModule:
             position: Position from 0 to 1
         """
         if not self.servo_kit:
+            logger.warning("move_arm called but servo_kit is None")
             return
             
+        logger.debug(f"move_arm called with side={side}, position={position}")
         with self._lock:
             # Convert 0-1 to 0-180
             angle = position * 180
             
             if side.lower() == 'left':
+                logger.debug(f"Setting left arm servo[2] to angle {angle}")
                 self.servo_kit.servo[2].angle = angle
                 self._left_arm_position = position
             else:
+                logger.debug(f"Setting right arm servo[3] to angle {angle}")
                 self.servo_kit.servo[3].angle = angle
                 self._right_arm_position = position
         
