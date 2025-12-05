@@ -44,21 +44,21 @@ def test_servo_channels():
     print("Watch which physical servo moves for each channel number")
     print("Press Ctrl+C to stop at any time\n")
     
-    # Test all channels 0-15
-    channels_to_test = list(range(16))
+    # Test channels 0-3 and 14-15
+    channels_to_test = [0, 1, 14, 15]
     
     try:
-        for channel in channels_to_test:  # Test all channels 0-15
+        for channel in channels_to_test:  # Test channels 0,1,2,3,14,15
             print(f"=== Testing Channel {channel} ===")
             
             # Very quick movement test
             print(f"Channel {channel}: Moving...")
             servo_kit.servo[channel].angle = 45
-            time.sleep(0.1)
+            time.sleep(0.6)
             servo_kit.servo[channel].angle = 135
-            time.sleep(0.1)
+            time.sleep(0.6)
             servo_kit.servo[channel].angle = 90
-            time.sleep(0.1)
+            time.sleep(0.6)
             
             print(f"✓ Channel {channel} test complete\n")
     
