@@ -27,6 +27,7 @@ def test_servo_channels():
     # Try to initialize servo kit directly
     try:
         import board
+        from adafruit_servokit import ServoKit
         
         servo_kit = ServoKit(channels=16)
         print(f"ServoKit initialized successfully: {servo_kit}")
