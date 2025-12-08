@@ -11,12 +11,15 @@ class DriveController:
         self._head_pan_target = 0.0
         self._head_tilt_target = 0.0
         self._last_head_update = time.time()
+        self._last_head_command_time = time.time()
         
         # Load head control config
         from config import Config
         config = Config()
         self._head_control_mode = config.get('joystick', 'head_control', 'mode', default='absolute')
         self._head_velocity_speed = config.get('joystick', 'head_control', 'velocity_speed', default=90.0)
+        self._head_update_rate = config.get('joystick', 'head_control', 'update_rate', default=30)
+        self._head_update_interval = 1.0 / self._head_update_rate
         
         # Initialize head position targets from current motor position
         self._initialize_head_position()
@@ -99,19 +102,28 @@ class DriveController:
         
         if self._head_control_mode == "velocity":
             # Velocity mode: axis controls speed of movement
-            if abs(pan_axis) >= dz:
-                self._head_pan_target += pan_axis * self._head_velocity_speed * dt
-                self._head_pan_target = max(-90, min(90, self._head_pan_target))
+            position_updated = False
+            current_time = time.time()
             
-            if abs(tilt_axis) >= dz:
-                self._head_tilt_target += tilt_axis * 30.0 * dt  # 30 degrees per second max for tilt
-                self._head_tilt_target = max(-45, min(45, self._head_tilt_target))
-            
-            # Always send current target position in velocity mode
-            try:
-                self.motors.move_head(pan=self._head_pan_target, tilt=self._head_tilt_target)
-            except Exception:
-                pass
+            # Only update at configured rate to prevent jitter
+            if current_time - self._last_head_command_time >= self._head_update_interval:
+                if abs(pan_axis) >= dz:
+                    self._head_pan_target += pan_axis * self._head_velocity_speed * dt
+                    self._head_pan_target = max(-90, min(90, self._head_pan_target))
+                    position_updated = True
+                
+                if abs(tilt_axis) >= dz:
+                    self._head_tilt_target += tilt_axis * 30.0 * dt  # 30 degrees per second max for tilt
+                    self._head_tilt_target = max(-45, min(45, self._head_tilt_target))
+                    position_updated = True
+                
+                # Only send update if position changed
+                if position_updated:
+                    try:
+                        self.motors.move_head(pan=self._head_pan_target, tilt=self._head_tilt_target)
+                        self._last_head_command_time = current_time
+                    except Exception:
+                        pass
         else:
             # Absolute mode: axis directly controls position
             pan_cmd = None

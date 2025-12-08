@@ -69,6 +69,7 @@ joystick:
   head_control:
     mode: "velocity"  # "absolute" or "velocity"
     velocity_speed: 90.0  # degrees per second for velocity mode
+    update_rate: 30  # Hz - how often to update position in velocity mode
 sensors:
   update_rate: 52
   threshold: 98
