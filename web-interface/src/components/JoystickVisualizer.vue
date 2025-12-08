@@ -95,23 +95,18 @@ const showRaw = ref(false)
 function clamp(v: number) { return Math.max(-1, Math.min(1, v ?? 0)) }
 function fmt(v?: number) { return (v ?? 0).toFixed(2) }
 
-const useWindowsMapping = (() => {
-  try {
-    const p = (navigator as any)?.platform || ''
-    const ua = (navigator as any)?.userAgent || ''
-    return /Win/i.test(p) || /Windows/i.test(ua)
-  } catch { return false }
-})()
-
 const procAxes = computed<number[]>(() => {
   const raw = axes.value || []
-  let mapped: number[]
-  if (useWindowsMapping) {
-    // Your device indices from REPL: LS(0,1), RS(2,3), LT(4), RT(5)
-    mapped = [raw[0] ?? 0, raw[1] ?? 0, raw[2] ?? 0, raw[3] ?? 0, raw[4] ?? 0, raw[5] ?? 0]
-  } else {
-    mapped = [raw[0] ?? 0, raw[1] ?? 0, raw[2] ?? 0, raw[3] ?? 0, raw[4] ?? 0, raw[5] ?? 0]
-  }
+  // Actual device mapping from config.yaml: LS(0,1), RS(3,4), LT(2), RT(5)
+  // Map to display order: LS_X, LS_Y, RS_X, RS_Y, LT, RT
+  const mapped = [
+    raw[0] ?? 0,  // Left stick X
+    raw[1] ?? 0,  // Left stick Y
+    raw[3] ?? 0,  // Right stick X
+    raw[4] ?? 0,  // Right stick Y
+    raw[2] ?? 0,  // Left trigger
+    raw[5] ?? 0   // Right trigger
+  ]
   const a = mapped.map(v => clamp(v ?? 0))
   // Invert Y
   a[1] = (invertLeftY.value ? -a[1] : a[1])
