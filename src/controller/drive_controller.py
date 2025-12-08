@@ -67,7 +67,7 @@ class DriveController:
         except Exception:
             pass
 
-        # Head control (right thumbstick horizontal: pan, left trigger: tilt)
+        # Head control (right thumbstick)
         try:
             pan_axis = float(axes[3]) if len(axes) > 3 else 0.0  # Right thumbstick horizontal
         except Exception:
@@ -81,20 +81,20 @@ class DriveController:
         if abs(pan_axis) >= dz:
             pan_cmd = pan_axis * 90.0
         if abs(tilt_axis) >= dz:
-            tilt_cmd = -tilt_axis * 45.0
+            tilt_cmd = tilt_axis * 30.0
         if pan_cmd is not None or tilt_cmd is not None:
             try:
                 self.motors.move_head(pan=pan_cmd, tilt=tilt_cmd)
             except Exception:
                 pass
 
-        # Arm control (right thumbstick vertical: left arm, right trigger: right arm)
+        # Arm control (triggers)
         try:
-            left_arm_axis = float(axes[2]) if len(axes) > 2 else None  # Right thumbstick vertical
+            left_arm_axis = -float(axes[5]) if len(axes) > 5 else None
         except Exception:
             left_arm_axis = None
         try:
-            right_arm_axis = float(axes[5]) if len(axes) > 5 else None  # Right trigger
+            right_arm_axis = float(axes[2]) if len(axes) > 2 else None
         except Exception:
             right_arm_axis = None
         if left_arm_axis is not None:
