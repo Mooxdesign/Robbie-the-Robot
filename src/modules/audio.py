@@ -446,7 +446,7 @@ class AudioModule:
         devices = []
         for i in range(self._pyaudio.get_device_count()):
             dev_info = self._pyaudio.get_device_info_by_index(i)
-            if 'stereo mix' in dev_info['name'].lower():
+            if 'loopback' in dev_info['name'].lower() or 'stereo mix' in dev_info['name'].lower():
                 devices.append((i, dev_info['name']))
         return devices
 
