@@ -16,10 +16,22 @@ class DriveController:
         # Load head control config
         from config import Config
         config = Config()
-        self._head_control_mode = config.get('joystick', 'head_control', 'mode', default='absolute')
-        self._head_velocity_speed = config.get('joystick', 'head_control', 'velocity_speed', default=90.0)
-        self._head_update_rate = config.get('joystick', 'head_control', 'update_rate', default=30)
-        self._head_update_interval = 1.0 / self._head_update_rate
+        self.head_control = config.get('joystick', 'head_control', default={
+            'mode': 'absolute',
+            'velocity_speed': 90.0,
+            'update_rate': 30
+        })
+        self._head_update_interval = 1.0 / self.head_control['update_rate']
+        
+        # Load joystick mappings from config
+        self.joystick_mappings = config.get('joystick', 'mappings', default={
+            'drive_movement': 1,
+            'drive_steering': 0,
+            'left_arm': 5,
+            'right_arm': 2,
+            'head_pan': 3,
+            'head_tilt': 4
+        })
         
         # Initialize head position targets from current motor position
         self._initialize_head_position()
@@ -59,11 +71,11 @@ class DriveController:
         fwd = 0.0
         turn = 0.0
         try:
-            fwd = -float(axes[1]) if len(axes) > 1 else 0.0
+            fwd = -float(axes[self.joystick_mappings['drive_movement']]) if len(axes) > self.joystick_mappings['drive_movement'] else 0.0
         except Exception:
             fwd = 0.0
         try:
-            turn = float(axes[0]) if len(axes) > 0 else 0.0
+            turn = float(axes[self.joystick_mappings['drive_steering']]) if len(axes) > self.joystick_mappings['drive_steering'] else 0.0
         except Exception:
             turn = 0.0
 
@@ -87,11 +99,11 @@ class DriveController:
 
         # Head control (right thumbstick)
         try:
-            pan_axis = float(axes[3]) if len(axes) > 3 else 0.0  # Right thumbstick horizontal
+            pan_axis = float(axes[self.joystick_mappings['head_pan']]) if len(axes) > self.joystick_mappings['head_pan'] else 0.0  # Horizontal
         except Exception:
             pan_axis = 0.0
         try:
-            tilt_axis = float(axes[4]) if len(axes) > 4 else 0.0  # Left trigger
+            tilt_axis = float(axes[self.joystick_mappings['head_tilt']]) if len(axes) > self.joystick_mappings['head_tilt'] else 0.0  # Vertical
         except Exception:
             tilt_axis = 0.0
             
@@ -100,7 +112,7 @@ class DriveController:
         dt = current_time - self._last_head_update
         self._last_head_update = current_time
         
-        if self._head_control_mode == "velocity":
+        if self.head_control['mode'] == "velocity":
             # Velocity mode: axis controls speed of movement
             position_updated = False
             current_time = time.time()
@@ -108,7 +120,7 @@ class DriveController:
             # Only update at configured rate to prevent jitter
             if current_time - self._last_head_command_time >= self._head_update_interval:
                 if abs(pan_axis) >= dz:
-                    self._head_pan_target += pan_axis * self._head_velocity_speed * dt
+                    self._head_pan_target += pan_axis * self.head_control['velocity_speed'] * dt
                     self._head_pan_target = max(-90, min(90, self._head_pan_target))
                     position_updated = True
                 
@@ -140,11 +152,11 @@ class DriveController:
 
         # Arm control (triggers)
         try:
-            left_arm_axis = float(axes[5]) if len(axes) > 5 else None
+            left_arm_axis = float(axes[self.joystick_mappings['left_arm']]) if len(axes) > self.joystick_mappings['left_arm'] else None # Right trigger
         except Exception:
             left_arm_axis = None
         try:
-            right_arm_axis = -float(axes[2]) if len(axes) > 2 else None
+            right_arm_axis = -float(axes[self.joystick_mappings['right_arm']]) if len(axes) > self.joystick_mappings['right_arm'] else None # Left trigger
         except Exception:
             right_arm_axis = None
         if left_arm_axis is not None:

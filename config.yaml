@@ -66,6 +66,13 @@ lights:
 joystick:
   deadzone: 0.1
   smoothing: 0.2
+  mappings:
+    drive_movement: 1     # Left stick Y (forward/backward, inverted in code)
+    drive_steering: 0     # Left stick X (left/right turn)
+    left_arm: 5           # Right trigger
+    right_arm: 2          # Left trigger (inverted in code)
+    head_pan: 3           # Right stick horizontal
+    head_tilt: 4          # Right stick vertical
   head_control:
     mode: "velocity"  # "absolute" or "velocity"
     velocity_speed: 90.0  # degrees per second for velocity mode
