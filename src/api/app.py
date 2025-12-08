@@ -173,7 +173,7 @@ robot_state = {
     "chat_history": [],  # Full chat history: list of {sender, text}
     "robot_state": "standby",  # Current robot state (standby, listening, etc.)
     "joystick": {"axes": [], "buttons": []},
-    "motor": {"enabled": False, "mode": "arcade", "target_left": 0.0, "target_right": 0.0, "left_speed": 0.0, "right_speed": 0.0}
+    "motor": {"enabled": False, "mode": "arcade", "left_speed": 0.0, "right_speed": 0.0}
 }
 
 # --- LED Matrix State Integration ---

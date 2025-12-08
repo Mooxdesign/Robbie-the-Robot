@@ -12,7 +12,7 @@ export const api = {
     _stateListeners: [],
 
     // Listener registration (Hybrid Approach)
-    registerAudioLevelListener(cb) {
+    registerAudioLevelListener(cb) {right 
         this._audioLevelListeners.push(cb);
     },
     unregisterAudioLevelListener(cb) {

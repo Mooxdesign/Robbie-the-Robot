@@ -86,8 +86,6 @@ class MotorModule:
         # Motor state
         self.left_speed = 0
         self.right_speed = 0
-        self.target_left = 0
-        self.target_right = 0
         
         # Start update thread
         self.is_running = True
@@ -99,7 +97,7 @@ class MotorModule:
         
     def set_motor_speeds(self, left: float, right: float):
         """
-        Set target speeds for DC motors
+        Set motor speeds
         
         Args:
             left: Left motor speed (-1 to 1)
@@ -109,14 +107,12 @@ class MotorModule:
         logger.info(self.motor_kit)
 
         with self._lock:
-            self.target_left = max(min(left, self.max_speed), -self.max_speed)
-            self.target_right = max(min(right, self.max_speed), -self.max_speed)
+            self.left_speed = max(min(left, self.max_speed), -self.max_speed)
+            self.right_speed = max(min(right, self.max_speed), -self.max_speed)
 
-            # If hardware is present, throttle updates happen in _update_loop.
-            # When no hardware, update current speeds immediately so telemetry reflects targets.
+            # If no hardware, update is complete
             if not self.motor_kit:
-                self.left_speed = self.target_left
-                self.right_speed = self.target_right
+                return
 
     def stop(self):
         """Stop all motors"""
@@ -145,8 +141,8 @@ class MotorModule:
                 self._head_pan = pan
             # Set tilt servo (15)
             if tilt is not None:
-                # Convert to 0-180 range, but limit to -45 to 45
-                angle = (tilt + 45) * 2  # -45 -> 0, 45 -> 180
+                # Convert to 0-180 range, but limit to -5 to 85
+                angle = 40 + (tilt + 25) * 2  # -45 -> 0, 45 -> 180
                 logger.info(f"Setting tilt servo[15] to angle {angle}")
                 self.servo_kit.servo[15].angle = angle
                 self._head_tilt = tilt
@@ -194,11 +190,9 @@ class MotorModule:
                 pass
             
     def snapshot(self) -> dict:
-        """Return a thread-safe snapshot of motor targets and current speeds."""
+        """Return a thread-safe snapshot of motor speeds."""
         with self._lock:
             return {
-                'target_left': float(self.target_left),
-                'target_right': float(self.target_right),
                 'left_speed': float(self.left_speed),
                 'right_speed': float(self.right_speed),
                 'left_arm_position': float(self._left_arm_position),
@@ -246,28 +240,12 @@ class MotorModule:
             last_update = current_time
 
             # DEBUG: Log motor kit and speeds every loop
-            logger.debug(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}, target_left={self.target_left:.2f}, target_right={self.target_right:.2f}")
+            logger.debug(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}")
 
-            # Update speeds with acceleration limiting
             with self._lock:
-                # Left motor
-                error = self.target_left - self.left_speed
-                if abs(error) > self.acceleration * dt:
-                    self.left_speed += self.acceleration * dt * np.sign(error)
-                else:
-                    self.left_speed = self.target_left
-                    
-                # Right motor
-                error = self.target_right - self.right_speed
-                if abs(error) > self.acceleration * dt:
-                    self.right_speed += self.acceleration * dt * np.sign(error)
-                else:
-                    self.right_speed = self.target_right
-                    
-                # Set motor speeds (mirror to 4 channels)
+                # Set motor speeds
                 if self.motor_kit:
                     try:
-                        # logger.info(f"[MOTOR] (Fallback) Setting motor1={self.left_speed:.2f}, motor2={self.right_speed:.2f}")
                         self.motor_kit.motor1.throttle = self.left_speed
                         self.motor_kit.motor2.throttle = self.left_speed
                         self.motor_kit.motor3.throttle = self.right_speed
