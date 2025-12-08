@@ -66,6 +66,9 @@ lights:
 joystick:
   deadzone: 0.1
   smoothing: 0.2
+  head_control:
+    mode: "velocity"  # "absolute" or "velocity"
+    velocity_speed: 90.0  # degrees per second for velocity mode
 sensors:
   update_rate: 52
   threshold: 98
