@@ -36,7 +36,11 @@ export const api = {
         if (this.ws) {
             this.ws.close();
         }
-        const wsHost = API_HOST.replace(/^http:\/\//, '');
+        let wsHost = API_HOST.replace(/^https?:\/\//, '');
+        // If API_HOST doesn't have a protocol, use it as-is
+        if (!API_HOST.match(/^https?:\/\//)) {
+            wsHost = API_HOST;
+        }
         this.ws = new WebSocket(`ws://${wsHost}/ws`);
 
         this.ws.onopen = () => {
