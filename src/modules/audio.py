@@ -355,8 +355,40 @@ class AudioModule:
         freq = abs(freqs[idx])
         return float(freq)
 
-    def play_sound(self, filename: str) -> None:
-        """Play a WAV sound file."""
+    def find_output_device_by_name(self, name_substring: str) -> Optional[int]:
+        """
+        Find an output device by name substring.
+        
+        Args:
+            name_substring: Substring to search for in device name (case-insensitive)
+            
+        Returns:
+            Device index if found, None otherwise
+        """
+        if not self._pyaudio:
+            return None
+            
+        for i in range(self._pyaudio.get_device_count()):
+            try:
+                info = self._pyaudio.get_device_info_by_index(i)
+                if name_substring.lower() in info['name'].lower():
+                    if info['maxOutputChannels'] > 0:
+                        if self.debug:
+                            logger.info(f"Found output device: [{i}] {info['name']}")
+                        return i
+            except Exception as e:
+                if self.debug:
+                    logger.error(f"Error checking device {i}: {e}")
+        return None
+
+    def play_sound(self, filename: str, output_device_index: Optional[int] = None) -> None:
+        """
+        Play a WAV sound file.
+        
+        Args:
+            filename: Path to WAV file
+            output_device_index: Optional device index for playback. If None, uses system default.
+        """
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"File not found: {filename}")
         with wave.open(filename, 'rb') as wf:
@@ -364,7 +396,8 @@ class AudioModule:
                 format=self._pyaudio.get_format_from_width(wf.getsampwidth()),
                 channels=wf.getnchannels(),
                 rate=wf.getframerate(),
-                output=True
+                output=True,
+                output_device_index=output_device_index
             )
             stream.start_stream()
             data = wf.readframes(wf.getnframes())
