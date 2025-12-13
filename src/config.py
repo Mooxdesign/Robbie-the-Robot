@@ -17,9 +17,19 @@ class Config:
             config_path: Path to config file, defaults to config.yaml in project root
         """
         if config_path is None:
-            # Get project root directory
-            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            config_path = os.path.join(root_dir, 'config.yaml')
+            # Search for config.yaml starting from current file location up to root
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            while current_dir != os.path.dirname(current_dir):  # Stop at filesystem root
+                candidate = os.path.join(current_dir, 'config.yaml')
+                if os.path.exists(candidate):
+                    config_path = candidate
+                    break
+                current_dir = os.path.dirname(current_dir)
+            
+            # Fallback to old behavior if not found
+            if config_path is None:
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                config_path = os.path.join(root_dir, 'config.yaml')
 
         self.config_path = config_path
 
@@ -28,6 +38,7 @@ class Config:
             with open(self.config_path, 'r') as f:
                 loaded = yaml.safe_load(f)
                 self.config = loaded if isinstance(loaded, dict) else {}
+            logger.info(f"Loaded config from {self.config_path}")
         except Exception as e:
             logger.error(f"Failed to load config from {self.config_path}: {e}")
             self.config = {}

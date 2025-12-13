@@ -11,7 +11,8 @@ class ConversationController:
         self.conversation_history = [
             {
                 "role": "system",
-                "content": "You are Robbie the Robot, a robot who is being built by Heidi and Heidi's daddy. Your responses should be mostly short, kind, off-kilter, and suitable for a 6 year old. No sound effects."
+                # "content": "You are Robbie the Robot, a robot who is being built by Heidi and Heidi's daddy. Your responses should be mostly short, kind, off-kilter, and suitable for a 6 year old. No sound effects."
+                "content": "You are Robbie the Robot, a killer robot who is made of cardboard and has motorised wheels and moveable arms/head, a speaker to talk, a mic to listen, and you're controlled by a games controller. You're quite proud of yourself. You're also not modest and you're malevolent"
             }
         ]
         self.max_history = 10
@@ -45,12 +46,19 @@ class ConversationController:
             # Update robot_state and broadcast to all clients
             robot_state["chat_history"] = self.get_chat_history()
             # Broadcast as a dedicated message
-            asyncio.create_task(manager.broadcast(json.dumps({
-                "type": "chat_history",
-                "chat_history": robot_state["chat_history"]
-            })))
+            try:
+                # Try to get the running event loop
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(manager.broadcast(json.dumps({
+                    "type": "chat_history",
+                    "chat_history": robot_state["chat_history"]
+                })))
+            except RuntimeError:
+                # No event loop running (e.g., in tests), skip broadcast
+                pass
         except Exception as e:
-            logger.debug(f"[ConversationModule] Could not broadcast after {sender} message: {e}")
+            # Silently fail if API is not available (e.g., in tests)
+            pass
 
 
     def cleanup(self):

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 
-import os
-import sys
-import time
-import queue
-import numpy as np
+# Suppress ALSA warnings on Linux
+try:
+    import suppress_alsa
+except:
+    pass
+
 import pyaudio
+import numpy as np
+import wave
+import os
 import threading
 import logging
-from typing import Optional, Callable, List, Dict, Tuple
+from typing import Optional, Callable, Dict, Any
+import time
+import queue
+import sys
 
 from config import Config
-
-import wave
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +74,14 @@ class AudioModule:
 
         # Start output audio monitoring thread if output_device_index is provided
         self.output_device_index = self.get_first_stereo_mix_device_index()
-        logger.info(f"[AudioModule] Using audio output device: {self.output_device_index}")
+        if self.output_device_index is not None:
+            try:
+                dev_info = self._pyaudio.get_device_info_by_index(self.output_device_index)
+                logger.info(f"[AudioModule] Using audio output monitor device {self.output_device_index}: {dev_info.get('name')}")
+            except:
+                logger.info(f"[AudioModule] Using audio output device: {self.output_device_index}")
+        else:
+            logger.warning(f"[AudioModule] No loopback/stereo mix device found - output monitoring disabled")
 
     def _output_monitor_loop(self, stop_event=None):
         """
@@ -86,6 +98,7 @@ class AudioModule:
             except Exception:
                 open_rate = self.default_rate
 
+            logger.warning(f"[AudioModule] _output_monitor_loop opening stream on device {self.output_device_index}")
             stream = self._pyaudio.open(
                 format=self.default_format,
                 channels=1,
@@ -94,6 +107,7 @@ class AudioModule:
                 input_device_index=self.output_device_index,
                 frames_per_buffer=self.default_chunk_size
             )
+            logger.warning(f"[AudioModule] _output_monitor_loop stream opened successfully")
             if self.debug:
                 logger.info(f"[AudioModule] Output monitor started on device index {self.output_device_index} @ {open_rate} Hz")
             logger.info("[AudioModule] _output_monitor_loop is running.")
@@ -250,11 +264,24 @@ class AudioModule:
 
         # Create stream
         stream_id = f"{rate}_{channels}_{format}_{chunk_size}_{input}_{output}"
+        
+        # DEBUG: Log every stream creation with full details
+        import traceback
+        logger.warning(f"[AudioModule] CREATING STREAM:")
+        logger.warning(f"  input={input}, output={output}")
+        logger.warning(f"  device_index={device_index}")
+        logger.warning(f"  stream_type={stream_type}")
+        logger.warning(f"  Stack trace:")
+        for line in traceback.format_stack()[:-1]:
+            logger.warning(f"    {line.strip()}")
+        
         stream = self._pyaudio.open(format=format,
                                channels=channels,
                                rate=rate,
                                input=input,
                                output=output,
+                               input_device_index=input_device_index if input else None,
+                               output_device_index=output_device_index if output else None,
                                frames_per_buffer=chunk_size,
                                stream_callback=audio_callback)
         logger.info(f"[AudioModule] Created stream id={stream_id} type={stream_type} device={device_index} rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
@@ -473,14 +500,18 @@ class AudioModule:
         return None
 
     def list_stereo_mix_devices(self):
-        """Return a list of (index, name) for all Stereo Mix devices."""
+        """Return a list of (index, name) for all Stereo Mix/Loopback devices."""
         if not self._pyaudio:
             return []
         devices = []
         for i in range(self._pyaudio.get_device_count()):
             dev_info = self._pyaudio.get_device_info_by_index(i)
+            # On Linux with snd-aloop, look for "Loopback: PCM (hw:0,0)" - the CAPTURE side
+            # This is what receives audio sent to hw:0,1 (loopback playback)
             if 'loopback' in dev_info['name'].lower() or 'stereo mix' in dev_info['name'].lower():
-                devices.append((i, dev_info['name']))
+                # Only add if it has input channels (capture device)
+                if dev_info.get('maxInputChannels', 0) > 0:
+                    devices.append((i, dev_info['name']))
         return devices
 
     def set_output_device_index(self, index: int):

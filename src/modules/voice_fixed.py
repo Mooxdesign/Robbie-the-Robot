@@ -3,14 +3,11 @@
 import threading
 import time
 import platform
-import os
-import random
 import pyttsx3
 from typing import Optional, Dict, Any, List, Tuple, Union
 import logging
+
 logger = logging.getLogger(__name__)
-from config import Config
-config = Config()
 
 class VoiceModule(threading.Thread):
     """Text-to-speech module using pyttsx3 with proper event handling"""
@@ -35,13 +32,6 @@ class VoiceModule(threading.Thread):
         self.rate = rate
         self.volume = volume
         self.voice_id = voice_id
-        
-        # Load pre_speech_delay from config
-        try:
-            self.pre_speech_delay = config.get('voice', 'pre_speech_delay', default=0.3)
-        except Exception as e:
-            self.pre_speech_delay = 0.3
-            logger.warning(f"[VoiceModule] Failed to load config: {e}")
         
         # Detect platform for threading strategy
         self.platform = platform.system()
@@ -104,8 +94,11 @@ class VoiceModule(threading.Thread):
             engine.setProperty('rate', self.rate)
             engine.setProperty('volume', self.volume)
             
-            # Get available voices
+            # Log all available voices
             voices = engine.getProperty('voices')
+            logger.info(f"[VoiceModule] Available voices:")
+            for v in voices:
+                logger.info(f"- {v.id}: {v.name} (languages={v.languages}, gender={getattr(v, 'gender', None)}, age={getattr(v, 'age', None)})")
             
             # Platform-specific voice selection
             if self.platform == 'Windows':
@@ -128,20 +121,18 @@ class VoiceModule(threading.Thread):
             else:
                 # Linux: prefer English voices
                 selected_voice = None
-                english_voices = []
-                
-                # Collect all English voices
+                # Try to find an English voice (en-us, en-gb, en, etc.)
                 for v in voices:
                     voice_id_lower = v.id.lower()
-                    if 'en' in voice_id_lower or 'english' in voice_id_lower:
-                        english_voices.append(v)
-                
-                # Use the second English voice (index 1) which sounds best
-                # This avoids the Caribbean accent in index 0
-                if len(english_voices) > 1:
-                    selected_voice = english_voices[1]
-                elif len(english_voices) > 0:
-                    selected_voice = english_voices[0]
+                    if 'en-us' in voice_id_lower or 'english-us' in voice_id_lower:
+                        selected_voice = v
+                        break
+                if not selected_voice:
+                    for v in voices:
+                        voice_id_lower = v.id.lower()
+                        if 'en' in voice_id_lower or 'english' in voice_id_lower:
+                            selected_voice = v
+                            break
                 
                 if selected_voice:
                     engine.setProperty('voice', selected_voice.id)
@@ -453,119 +444,10 @@ class VoiceModule(threading.Thread):
                                 time.sleep(1)
                                 self._notify_completion()
                             else:
-                                # Prime the audio device with a very short beep to wake it up
-                                # This prevents the first syllable from being cut off
-                                if self.platform == 'Linux':
-                                    import subprocess
-                                    try:
-                                        frequency = random.randint(200, 300)
-                                        logger.info(f"[VoiceModule] Attempting beep prime at {frequency}Hz")
-                                        result = subprocess.run(['speaker-test', '-t', 'sine', '-f', str(frequency), '-l', '1', '-p', '2400'], 
-                                                     capture_output=True, text=True, timeout=0.5)
-                                        if result.returncode != 0:
-                                            logger.warning(f"[VoiceModule] Beep failed: {result.stderr}")
-                                        else:
-                                            logger.info(f"[VoiceModule] Beep successful")
-                                        time.sleep(0.4)  # Longer gap after priming
-                                    except subprocess.TimeoutExpired:
-                                        logger.warning(f"[VoiceModule] Beep timeout")
-                                    except Exception as e:
-                                        logger.warning(f"[VoiceModule] Beep error: {e}")
-                                
                                 logger.info(f"[VoiceModule] Speaking: '{text}'")
-                                start_time = time.time()
-                                
-                                # pyttsx3's espeak driver doesn't work in threads - call espeak directly
-                                import subprocess
-                                try:
-                                    # Get voice and rate from engine
-                                    voice_id = self.engine.getProperty('voice') if self.engine else None
-                                    
-                                    # Use espeak to generate WAV, then pipe to aplay
-                                    # This bypasses espeak's problematic ALSA handling
-                                    
-                                    if voice_id:
-                                        # Extract just the voice name after the last slash
-                                        voice_name = voice_id.split('/')[-1] if '/' in voice_id else voice_id
-                                    else:
-                                        voice_name = 'en'
-                                    
-                                    # Build command: espeak generates WAV to stdout
-                                    # We'll play it to USB speaker AND send to loopback for monitoring
-                                    # Escape single quotes in text for shell
-                                    escaped_text = text.replace("'", "'\\''")
-                                    
-                                    # Generate WAV to temp file
-                                    import tempfile
-                                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-                                        tmp_wav = tmp.name
-                                    
-                                    # Generate speech to WAV file
-                                    espeak_cmd = f"espeak -v {voice_name} -s {self.rate} -w {tmp_wav} '{escaped_text}'"
-                                    logger.info(f"[VoiceModule] Generating: {espeak_cmd}")
-                                    
-                                    result = subprocess.run(
-                                        espeak_cmd,
-                                        shell=True,
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE,
-                                        text=True,
-                                        timeout=30
-                                    )
-                                    
-                                    if result.returncode != 0:
-                                        logger.error(f"[VoiceModule] espeak generation failed: {result.stderr}")
-                                        try:
-                                            os.unlink(tmp_wav)
-                                        except:
-                                            pass
-                                        continue
-                                    
-                                    # Play to USB speaker (hw:1,0) AND loopback (hw:0,1) simultaneously
-                                    # Start both playbacks in background
-                                    usb_proc = subprocess.Popen(
-                                        ['aplay', '-D', 'plughw:1,0', tmp_wav],
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE
-                                    )
-                                    loopback_proc = subprocess.Popen(
-                                        ['aplay', '-D', 'plughw:0,1', tmp_wav],
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE
-                                    )
-                                    
-                                    # Wait for both to complete
-                                    usb_proc.wait(timeout=30)
-                                    loopback_proc.wait(timeout=30)
-                                    
-                                    # Clean up temp file
-                                    try:
-                                        os.unlink(tmp_wav)
-                                    except:
-                                        pass
-                                    
-                                    logger.info(f"[VoiceModule] Playback complete (USB: {usb_proc.returncode}, Loopback: {loopback_proc.returncode})")
-                                    
-                                    logger.info(f"[VoiceModule] espeak returncode: {result.returncode}")
-                                    if result.stdout:
-                                        logger.info(f"[VoiceModule] stdout: {result.stdout[:200]}")
-                                    if result.stderr:
-                                        logger.info(f"[VoiceModule] stderr: {result.stderr[:500]}")
-                                    
-                                    if result.returncode != 0:
-                                        logger.error(f"[VoiceModule] espeak failed (returncode={result.returncode}): {result.stderr}")
-                                    elif result.stderr:
-                                        logger.warning(f"[VoiceModule] espeak stderr: {result.stderr}")
-                                    else:
-                                        logger.info(f"[VoiceModule] espeak completed successfully")
-                                    
-                                except subprocess.TimeoutExpired:
-                                    logger.error(f"[VoiceModule] espeak timeout")
-                                except Exception as e:
-                                    logger.error(f"[VoiceModule] espeak error: {e}")
-                                
-                                duration = time.time() - start_time
-                                logger.info(f"[VoiceModule] Completed: '{text}' (took {duration:.2f}s)")
+                                self.engine.say(text)
+                                self.engine.runAndWait()
+                                logger.info(f"[VoiceModule] Completed: '{text}'")
                                 
                                 # Manual completion notification (espeak doesn't have callbacks)
                                 self._notify_completion()

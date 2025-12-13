@@ -28,9 +28,11 @@ class Joystick:
         self._lock = threading.Lock()
         self._run_threaded = run_threaded
         
-            # Initialize pygame and joystick (joystick API only)
+            # Initialize ONLY the joystick subsystem, not audio
+            # pygame.init() would initialize audio mixer which locks the audio device
         try:
-            pygame.init()
+            # Only init display and joystick, skip audio mixer
+            pygame.display.init()
             pygame.joystick.init()
             # Validate joystick id and get joystick
             count = pygame.joystick.get_count()

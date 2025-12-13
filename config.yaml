@@ -53,6 +53,7 @@ voice:
   wake_word: porcupine
   language: en-US
   speech_rate: 140
+  pre_speech_delay: 0.3
 ai:
   model: gpt-3.5-turbo
   temperature: 0.7
@@ -74,7 +75,7 @@ joystick:
     head_pan: 3           # Right stick horizontal
     head_tilt: 4          # Right stick vertical
   head_control:
-    mode: "velocity"  # "absolute" or "velocity"
+    mode: "absolute"  # "absolute" or "velocity"
     velocity_speed: 90.0  # degrees per second for velocity mode
     update_rate: 30  # Hz - how often to update position in velocity mode
 sensors:

@@ -38,7 +38,8 @@ class SpeechController:
             debug=debug,
             backend=backend
         )
-        self.voice = VoiceModule(debug=debug)
+        self.audio = audio_module
+        self.voice = VoiceModule(debug=debug)  # Loads config automatically
         # Register callbacks (only once)
         self._callbacks_registered = False
         self._register_callbacks()
