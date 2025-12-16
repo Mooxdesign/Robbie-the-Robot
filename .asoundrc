@@ -1,3 +1,9 @@
+# AB13X USB Microphone for speech recognition
+pcm.ab13x_mic {
+    type hw
+    card 2  # Replace with AB13X USB mic card number
+}
+
 pcm.snd_card { # USB Audio Device
     type hw
     card 1
@@ -5,7 +11,7 @@ pcm.snd_card { # USB Audio Device
 
 ctl.!default { # default control; alsamixer and such will use this
     type hw
-    card 2
+    card 1
 }
 
 # software mixer for sound card
@@ -50,8 +56,7 @@ pcm.dsnooper {
     ipc_key 2048
     ipc_perm 0666
     slave.pcm "snd_card"
-    slave
-    {
+    slave {
         period_time 0
         period_size 1024
         buffer_size 4096
@@ -65,9 +70,21 @@ pcm.dsnooper {
 
 pcm.!default {
     type asym
-    playback.pcm "out"
-    capture.pcm "dsnooper"
+    #playback.pcm "out"
+    playback.pcm "mono_to_stereo"
+    capture.pcm "ab13x_mic"
 }
+# Mono to stereo converter for playback
+pcm.mono_to_stereo {
+ type route
+ slave.pcm "out"
+ slave.channels 2
+ ttable [
+ [ 1 0 ] # mono channel -> stereo left
+ [ 0 1 ] # mono channel -> stereo right
+ ]
+}
+
 
 # Multi, splitting onto usual card and loopback
 pcm.out {

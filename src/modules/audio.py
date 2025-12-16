@@ -65,9 +65,17 @@ class AudioModule:
                 except Exception as e:
                     logger.error(f"  Error getting device {i} info: {e}")
             try:
-                device_info = self._pyaudio.get_default_input_device_info()
-                self.input_device_index = device_info['index']
-                logger.info(f"[AudioModule] Using audio input device: {device_info['name']} (index: {device_info['index']})")
+                # Try to find USB microphone first, then fallback to default
+                mic_index = self.find_audio_device_by_name("USB Audio Device")
+                if mic_index is not None:
+                    self.input_device_index = mic_index
+                    device_info = self._pyaudio.get_device_info_by_index(mic_index)
+                    logger.info(f"[AudioModule] Found USB microphone: {device_info['name']} (index: {device_info['index']})")
+                else:
+                    # Fallback to default input device
+                    device_info = self._pyaudio.get_default_input_device_info()
+                    self.input_device_index = device_info['index']
+                    logger.info(f"[AudioModule] Using default input device: {device_info['name']} (index: {device_info['index']})")
                 logger.info(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
                 logger.error(f"[AudioModule] Error getting selected device info: {e}")
@@ -280,8 +288,8 @@ class AudioModule:
                                rate=rate,
                                input=input,
                                output=output,
-                               input_device_index=input_device_index if input else None,
-                               output_device_index=output_device_index if output else None,
+                               input_device_index=self.input_device_index if input else None,
+                               output_device_index=self.output_device_index if output else None,
                                frames_per_buffer=chunk_size,
                                stream_callback=audio_callback)
         logger.info(f"[AudioModule] Created stream id={stream_id} type={stream_type} device={device_index} rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
@@ -382,9 +390,10 @@ class AudioModule:
         freq = abs(freqs[idx])
         return float(freq)
 
-    def find_output_device_by_name(self, name_substring: str) -> Optional[int]:
+    def find_audio_device_by_name(self, name_substring: str) -> Optional[int]:
         """
-        Find an output device by name substring.
+        Find an audio device by name substring.
+        Works for both input and output devices.
         
         Args:
             name_substring: Substring to search for in device name (case-insensitive)
@@ -399,9 +408,11 @@ class AudioModule:
             try:
                 info = self._pyaudio.get_device_info_by_index(i)
                 if name_substring.lower() in info['name'].lower():
-                    if info['maxOutputChannels'] > 0:
+                    # Check if device has input OR output channels
+                    if info.get('maxInputChannels', 0) > 0 or info.get('maxOutputChannels', 0) > 0:
+                        device_type = "input" if info.get('maxInputChannels', 0) > 0 else "output"
                         if self.debug:
-                            logger.info(f"Found output device: [{i}] {info['name']}")
+                            logger.info(f"Found {device_type} device: [{i}] {info['name']}")
                         return i
             except Exception as e:
                 if self.debug:

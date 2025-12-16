@@ -88,10 +88,19 @@ class SpeechToTextModule:
             if self.debug:
                 logger.info(f"[SpeechToTextModule] Backend explicitly set to {self.backend}")
         else:
-            # Only set to whisper if whisper is imported
-            if 'whisper' in globals():
+            # Pi Zero specific: Always prefer Google STT on Pi Zero
+            pi_zero_detected = self._is_pi_zero()
+            logger.info(f"[SpeechToTextModule] Pi Zero detection: {pi_zero_detected}")
+            logger.info(f"[SpeechToTextModule] Available backends - whisper: {'whisper' in globals()}, google: {google_speech is not None}")
+            
+            if pi_zero_detected and google_speech is not None:
+                self.backend = "google"
+                logger.info("[SpeechToTextModule] Using backend: google (Pi Zero auto-detected)")
+                if self.debug:
+                    logger.info("[SpeechToTextModule] Pi Zero detected, forcing Google STT backend for performance.")
+            elif 'whisper' in globals():
                 self.backend = "whisper"
-                if self._is_pi_zero() and google_speech is not None:
+                if pi_zero_detected and google_speech is not None:
                     self.backend = "google"
                     logger.info("[SpeechToTextModule] Using backend: google (auto-detected)")
                     if self.debug:
@@ -200,21 +209,13 @@ class SpeechToTextModule:
             if self.debug:
                 logger.info("[SpeechToTextModule] start_listening called")
             # Start audio stream and processing thread
-            self._process_thread = threading.Thread(target=self._process_audio, daemon=True)
+            self._process_thread = threading.Thread(target=self._process_audio)
             self._process_thread.start()
         
-        # Detect device sample rate
-        self.device_sample_rate = None
-        try:
-            info = self.audio.get_device_info()
-            if info and 'defaultSampleRate' in info:
-                self.device_sample_rate = int(info['defaultSampleRate'])
-                logger.info(f"[SpeechToTextModule] Detected device sample rate: {self.device_sample_rate}")
-            else:
-                self.device_sample_rate = self.SAMPLE_RATE
-        except Exception as e:
-            logger.error(f"[SpeechToTextModule] Could not detect device sample rate: {e}")
-            self.device_sample_rate = self.SAMPLE_RATE
+        # Use standard sample rate - AudioModule handles device compatibility
+        self.device_sample_rate = 48000
+        logger.info(f"[SpeechToTextModule] Using sample rate: {self.device_sample_rate} Hz")
+        
         # Stop any existing processing thread
         if self._process_thread and self._process_thread.is_alive():
             if self.debug:
@@ -379,7 +380,6 @@ class SpeechToTextModule:
                         if db > self._audio_threshold:
                             self._last_audio = time.time()
                         # Print buffer duration for diagnostics
-                        duration_sec = len(self._audio_buffer) * self.CHUNK_SIZE / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
                         elapsed = time.time() - self._last_audio
                         msg = f"[DEBUG] elapsed={elapsed:.2f}, phrase_timeout={self._phrase_timeout}, db={db:.1f}, buffering_active={self._buffering_active}"
                         # print(msg.ljust(100), end='\r', flush=True)
@@ -397,13 +397,19 @@ class SpeechToTextModule:
                 max_amplitude = np.max(np.abs(audio_concat))
 
                 if max_amplitude > linear_threshold:
-                    if self.debug:
-                        msg = f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, processing phrase."
-                        logger.info(msg)
+                    msg = f"[SpeechToTextModule] Silence detected for {elapsed:.2f}s, processing phrase."
+                    logger.info(msg)
+                    # logger.info(f"[SpeechToTextModule] Buffer details: size={len(self._audio_buffer)}, max_amplitude={max_amplitude:.6f}, threshold={linear_threshold:.6f}")
+                    # logger.info(f"[SpeechToTextModule] Thread state: {getattr(self, '_process_thread', None)}")
+                    if getattr(self, '_process_thread', None):
+                        logger.info(f"[SpeechToTextModule] Process thread alive: {self._process_thread.is_alive()}")
                     if not getattr(self, '_process_thread', None) or not self._process_thread.is_alive():
                         logger.debug(f"[SpeechToTextModule] Starting _process_audio thread (buffer size: {len(self._audio_buffer)})")
                         self._process_thread = threading.Thread(target=self._process_audio)
                         self._process_thread.start()
+                        logger.info(f"[SpeechToTextModule] Process thread started: {self._process_thread.name}")
+                    else:
+                        logger.warning(f"[SpeechToTextModule] Process thread already running, skipping new transcription")
                     self._buffering_active = False  # Reset to waiting for speech
                     # Clear pre-buffer after phrase
                     self._pre_buffer.clear()
@@ -424,15 +430,20 @@ class SpeechToTextModule:
 
         except Exception as e:
             logger.error(f"[SpeechToTextModule] Error processing audio: {e}")
+            logger.exception(f"[SpeechToTextModule] Full traceback in audio callback:")
         return (None, 0)  # Continue
 
     def _process_audio(self):
+        import threading as _threading
+        thread_name = _threading.current_thread().name
         with self._lock:
             buffer_len = len(self._audio_buffer)
-        logger.debug(f"[SpeechToTextModule] _process_audio called (buffer size: {buffer_len})")
+        logger.info(f"[{thread_name}] === STARTING _process_audio (buffer size: {buffer_len}) ===")
+        logger.info(f"[{thread_name}] transcription_in_progress: {self.transcription_in_progress}")
+        logger.info(f"[{thread_name}] is_listening: {self.is_listening}")
+        logger.info(f"[{thread_name}] backend: {self.backend}")
         if not self.is_listening:
-            if self.debug:
-                logger.warning("[_process_audio] Called while not listening, skipping.")
+            logger.warning(f"[{thread_name}] Called while not listening, skipping.")
             with self._lock:
                 self._audio_buffer = []
             return
@@ -440,9 +451,11 @@ class SpeechToTextModule:
         try:
             with self._lock:
                 if len(self._audio_buffer) == 0:
-                    logger.warning(f"[{_threading.current_thread().name}] No audio buffer to process.")
+                    logger.warning(f"[{thread_name}] No audio buffer to process.")
                     return
                 audio_data = np.concatenate(self._audio_buffer)
+                logger.info(f"[{thread_name}] Audio buffer concatenated: shape={audio_data.shape}, dtype={audio_data.dtype}")
+                logger.info(f"[{thread_name}] Audio stats: min={audio_data.min():.6f}, max={audio_data.max():.6f}, mean={audio_data.mean():.6f}")
                 self._audio_buffer = []
             # Ensure mono
             if audio_data.ndim > 1:
@@ -453,8 +466,10 @@ class SpeechToTextModule:
                 audio_data = audio_data / np.max(np.abs(audio_data))
             duration_sec = len(audio_data) / (self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE)
             if duration_sec < 0.5:
-                logger.warning(f"[WARNING] Audio buffer too short ({duration_sec:.3f}s), skipping transcription.")
+                logger.warning(f"[{thread_name}] Audio buffer too short ({duration_sec:.3f}s), skipping transcription.")
                 return
+            
+            logger.info(f"[{thread_name}] Audio duration: {duration_sec:.3f}s, proceeding with transcription")
             target_rate = self.SAMPLE_RATE
             if hasattr(self, 'device_sample_rate') and self.device_sample_rate and self.device_sample_rate != target_rate:
                 try:
@@ -468,34 +483,103 @@ class SpeechToTextModule:
             text = None
             if self.backend == "whisper":
                 if not self.whisper:
-                    logger.error("[SpeechToTextModule] Whisper model not initialized!")
+                    logger.error(f"[{thread_name}] Whisper model not initialized!")
                     return
+                logger.info(f"[{thread_name}] === STARTING WHISPER TRANSCRIPTION ===")
+                start_time = time.time()
+                self._set_transcription_in_progress(True)
                 try:
+                    logger.info(f"[{thread_name}] Calling whisper.transcribe()...")
                     result = self.whisper.transcribe(audio_data, language=self.language)
+                    end_time = time.time()
+                    logger.info(f"[{thread_name}] Whisper completed in {end_time - start_time:.2f}s")
                     text = result["text"]
+                    logger.info(f"[{thread_name}] Whisper result: '{text}'")
                 except Exception as e:
-                    logger.error(f"[{_threading.current_thread().name}] Whisper transcription error: {e}")
+                    end_time = time.time()
+                    logger.error(f"[{thread_name}] Whisper transcription error after {end_time - start_time:.2f}s: {e}")
+                    logger.exception(f"[{thread_name}] Full traceback:")
             elif self.backend == "google" and self.gcloud_client is not None:
+                logger.info(f"[{thread_name}] === STARTING GOOGLE STT TRANSCRIPTION (Pi Zero) ===")
+                start_time = time.time()
+                self._set_transcription_in_progress(True)
+                logger.info(f"[{thread_name}] Pi Zero detected - using Google Cloud Speech backend")
                 try:
                     import wave
+                    logger.info(f"[{thread_name}] Converting audio to WAV format for Google STT...")
+                    
+                    # Pi Zero specific: Check audio data before conversion
+                    logger.info(f"[{thread_name}] Pre-conversion audio stats: shape={audio_data.shape}, dtype={audio_data.dtype}")
+                    logger.info(f"[{thread_name}] Pre-conversion range: [{audio_data.min():.6f}, {audio_data.max():.6f}]")
+                    
                     wav_buf = io.BytesIO()
                     audio_int16 = np.clip(audio_data * 32767.0, -32768, 32767).astype(np.int16)
+                    
+                    # Pi Zero specific: Check converted audio
+                    logger.info(f"[{thread_name}] Converted to int16: min={audio_int16.min()}, max={audio_int16.max()}")
+                    logger.info(f"[{thread_name}] Zero-crossings: {np.sum(np.diff(np.sign(audio_int16)) != 0)}")
+                    
                     with wave.open(wav_buf, 'wb') as wf:
                         wf.setnchannels(1)
                         wf.setsampwidth(2)
                         wf.setframerate(target_rate)
                         wf.writeframes(audio_int16.tobytes())
                     wav_bytes = wav_buf.getvalue()
+                    logger.info(f"[{thread_name}] WAV buffer created: {len(wav_bytes)} bytes ({len(wav_bytes)/1024:.1f} KB)")
+                    
+                    # Pi Zero specific: Check if we have reasonable audio data
+                    if len(wav_bytes) < 1000:  # Less than 1KB seems suspicious
+                        logger.warning(f"[{thread_name}] WAV buffer seems too small for Pi Zero: {len(wav_bytes)} bytes")
+                    
+                    # Create Google STT request
+                    logger.info(f"[{thread_name}] Creating Google STT request objects...")
                     audio = google_speech.RecognitionAudio(content=wav_bytes)
                     config = google_speech.RecognitionConfig(
                         encoding=google_speech.RecognitionConfig.AudioEncoding.LINEAR16,
                         sample_rate_hertz=target_rate,
                         language_code=self.language if self.language else "en-US",
+                        # Pi Zero specific: Enable enhanced models for better performance
+                        enable_automatic_punctuation=True,
+                        model="command_and_search"  # Better for short commands on Pi Zero
                     )
+                    
+                    logger.info(f"[{thread_name}] Google STT config: sample_rate={target_rate}, language={config.language_code}")
+                    logger.info(f"[{thread_name}] Calling Google Cloud Speech recognize() (this may take time on Pi Zero)...")
+                    
+                    # Pi Zero specific: Add timeout warning after 10 seconds
+                    import threading
+                    def timeout_warning():
+                        time.sleep(10)
+                        if self.transcription_in_progress:
+                            logger.warning(f"[{thread_name}] Google STT taking >10s on Pi Zero - may be network or resource issue")
+                    
+                    warning_thread = threading.Thread(target=timeout_warning, daemon=True)
+                    warning_thread.start()
+                    
                     response = self.gcloud_client.recognize(config=config, audio=audio)
-                    text = " ".join([result.alternatives[0].transcript for result in response.results])
+                    end_time = time.time()
+                    logger.info(f"[{thread_name}] Google STT completed in {end_time - start_time:.2f}s")
+                    
+                    # Check response validity
+                    if not response.results:
+                        logger.warning(f"[{thread_name}] Google STT returned empty results")
+                        text = ""
+                    else:
+                        text = " ".join([result.alternatives[0].transcript for result in response.results])
+                        logger.info(f"[{thread_name}] Google STT result: '{text}' (confidence: {response.results[0].alternatives[0].confidence:.2f})")
+                        
                 except Exception as e:
-                    logger.error(f"[{_threading.current_thread().name}] Google STT error: {e}")
+                    end_time = time.time()
+                    logger.error(f"[{thread_name}] Google STT error after {end_time - start_time:.2f}s: {e}")
+                    logger.exception(f"[{thread_name}] Full traceback:")
+                    
+                    # Pi Zero specific: Common issues
+                    if "timeout" in str(e).lower():
+                        logger.error(f"[{thread_name}] Pi Zero Google STT timeout - check network connection")
+                    if "quota" in str(e).lower():
+                        logger.error(f"[{thread_name}] Google Cloud quota exceeded - check billing/API key")
+                    if "audio" in str(e).lower():
+                        logger.error(f"[{thread_name}] Audio format issue - check microphone/input on Pi Zero")
             if text:
                 if hasattr(self, 'command_callbacks') and isinstance(self.command_callbacks, dict):
                     cb = self.command_callbacks.get(text)
@@ -510,10 +594,13 @@ class SpeechToTextModule:
                     except Exception as e:
                         logger.error(f"[{_threading.current_thread().name}] Error in transcription callback: {e}")
         except Exception as e:
-            logger.error(f"[{_threading.current_thread().name}] Error processing audio: {e}")
+            logger.error(f"[{thread_name}] Error processing audio: {e}")
+            logger.exception(f"[{thread_name}] Full traceback:")
         finally:
+            logger.info(f"[{thread_name}] === FINISHING _process_audio ===")
             with self._lock:
                 self.transcription_in_progress = False
+                logger.info(f"[{thread_name}] transcription_in_progress set to False")
             self._audio_buffer = []
             
     def cleanup(self):
