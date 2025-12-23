@@ -14,6 +14,10 @@ import io
 import logging
 from typing import Optional, Callable, Dict, List
 import time
+import os
+import threading as _threading
+import tempfile
+import wave
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +164,13 @@ class SpeechToTextModule:
         if self.debug:
             logger.debug(f"[SpeechToTextModule] Audio threshold set to {self._audio_threshold} dB")
         self._stream_id = None
+        self.last_phrase_wav_path = None
         # Always expose audio_callback for tests
         self.audio_callback = getattr(self, '_test_audio_callback', self._audio_callback)
 
     def _is_pi_zero(self):
         # Detect Pi Zero by platform string
+        logger.info(f"[SpeechToTextModule] Platform: MACHINE={platform.uname().machine}, NODE={platform.uname().node}")
         return "armv6l" in platform.uname().machine or "raspberrypi" in platform.uname().node
 
     def add_transcription_callback(self, callback: Callable[[str], None]):
@@ -201,7 +207,7 @@ class SpeechToTextModule:
             if self.is_listening:
                 if self.debug:
                     logger.warning("[SpeechToTextModule] Already listening!")
-                return
+                return True
             self.is_listening = True
             self._audio_buffer = []
             self._last_audio = time.time()
@@ -211,34 +217,70 @@ class SpeechToTextModule:
             # Start audio stream and processing thread
             self._process_thread = threading.Thread(target=self._process_audio)
             self._process_thread.start()
+
+        logger.info(
+            "[SpeechToTextModule] Runtime: file=%s cwd=%s",
+            __file__,
+            os.getcwd(),
+        )
         
-        # Use standard sample rate - AudioModule handles device compatibility
-        self.device_sample_rate = 48000
+        try:
+            dev_info = self.audio.get_device_info() if hasattr(self.audio, "get_device_info") else None
+            logger.info("[SpeechToTextModule] Input device info: %s", dev_info)
+        except Exception as e:
+            logger.warning("[SpeechToTextModule] Failed to fetch input device info: %s", e)
+
+        # Deterministic open for debugging: no fallback probing.
+        # If this fails, we want to see the real error for the exact params.
+        # Force 48000 Hz for USB Audio Device to match hardware playback rate
+        if isinstance(dev_info, dict) and dev_info.get("name") and "USB Audio Device" in dev_info.get("name"):
+            self.device_sample_rate = 48000
+            logger.info(f"[SpeechToTextModule] Forcing 48000 Hz for USB Audio Device (hardware native rate)")
+        elif isinstance(dev_info, dict) and dev_info.get("defaultSampleRate"):
+            try:
+                self.device_sample_rate = int(dev_info["defaultSampleRate"])
+            except Exception:
+                self.device_sample_rate = 48000
+        elif not hasattr(self, "device_sample_rate") or not self.device_sample_rate:
+            self.device_sample_rate = 48000
         logger.info(f"[SpeechToTextModule] Using sample rate: {self.device_sample_rate} Hz")
-        
+
+        logger.info(
+            "[SpeechToTextModule] Stream params: rate=%s chunk_size=%s channels=%s format=%s",
+            self.device_sample_rate,
+            self.CHUNK_SIZE,
+            1,
+            AudioModule.FORMAT_INT16,
+        )
+
         # Stop any existing processing thread
         if self._process_thread and self._process_thread.is_alive():
             if self.debug:
                 logger.info("Waiting for processing thread to finish")
             self._process_thread.join(timeout=1)
+
         try:
-            logger.info(f"[SpeechToTextModule] Creating audio stream with sample_rate={self.device_sample_rate}, chunk_size={self.CHUNK_SIZE}")
+            logger.info(
+                "[SpeechToTextModule] Creating audio stream with sample_rate=%s, chunk_size=%s",
+                self.device_sample_rate,
+                self.CHUNK_SIZE,
+            )
             self._stream_id = self.audio.create_stream(
                 callback=self._audio_callback,
                 rate=self.device_sample_rate,
                 chunk_size=self.CHUNK_SIZE,
-                format=AudioModule.FORMAT_INT16,  # Use int16 for input
-                channels=1
+                format=AudioModule.FORMAT_INT16,
+                channels=1,
             )
-            if self.debug:
-                logger.info("Starting speech recognition")
+            logger.info("[SpeechToTextModule] Starting audio stream (id=%s)", self._stream_id)
             self.audio.start_stream(self._stream_id)
-            logger.info(f"[SpeechToTextModule] Audio stream started (id={self._stream_id})")
+            logger.info("[SpeechToTextModule] Audio stream started (id=%s)", self._stream_id)
+            return True
         except Exception as e:
-            logger.error(f"Failed to start speech recognition: {e}")
+            logger.error("Failed to start speech recognition: %s", e)
             self.is_listening = False
-            if hasattr(self, '_stream_id'):
-                self._stream_id = None
+            self._stream_id = None
+            return False
 
                 
     def stop_listening(self):
@@ -425,7 +467,9 @@ class SpeechToTextModule:
             if elapsed > self._silence_timeout:
                 logger.warning(f"[SpeechToTextModule] Standby timeout reached after {elapsed:.2f}s, stopping listening.")
                 if self.is_listening:
-                    self.stop_listening()
+                    # Do not call stop_listening from the PortAudio callback thread.
+                    # PortAudio may attempt to join/terminate internal threads and fail if invoked from callback.
+                    _threading.Thread(target=self.stop_listening, daemon=True).start()
                 return (None, 0)
 
         except Exception as e:
@@ -470,6 +514,23 @@ class SpeechToTextModule:
                 return
             
             logger.info(f"[{thread_name}] Audio duration: {duration_sec:.3f}s, proceeding with transcription")
+            
+            # Save WAV at original capture sample rate (before resampling for STT)
+            try:
+                wav_path = os.path.join(tempfile.gettempdir(), "robbie_last_phrase.wav")
+                original_rate = self.device_sample_rate if hasattr(self, 'device_sample_rate') and self.device_sample_rate else self.SAMPLE_RATE
+                audio_int16 = np.clip(audio_data * 32767.0, -32768, 32767).astype(np.int16)
+                with wave.open(wav_path, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(int(original_rate))
+                    wf.writeframes(audio_int16.tobytes())
+                self.last_phrase_wav_path = wav_path
+                logger.info(f"[{thread_name}] Saved last phrase WAV: {wav_path} (rate={int(original_rate)}, frames={len(audio_int16)})")
+            except Exception as e:
+                logger.warning(f"[{thread_name}] Failed to save last phrase WAV: {e}")
+            
+            # Resample for STT if needed
             target_rate = self.SAMPLE_RATE
             if hasattr(self, 'device_sample_rate') and self.device_sample_rate and self.device_sample_rate != target_rate:
                 try:
@@ -505,7 +566,6 @@ class SpeechToTextModule:
                 self._set_transcription_in_progress(True)
                 logger.info(f"[{thread_name}] Pi Zero detected - using Google Cloud Speech backend")
                 try:
-                    import wave
                     logger.info(f"[{thread_name}] Converting audio to WAV format for Google STT...")
                     
                     # Pi Zero specific: Check audio data before conversion

@@ -140,8 +140,18 @@ class RobotController:
                 self.speech.wake_word.stop_listening()
             # Start speech recognition
             if self.speech.speech_to_text:
-                self.speech.speech_to_text.start_listening()
-        self._set_state(RobotState.LISTENING)
+                ok = self.speech.speech_to_text.start_listening()
+                if ok:
+                    self._set_state(RobotState.LISTENING)
+                    return
+                logger.error("[wake_up] Speech recognition failed to start; staying in STANDBY")
+                # Restart wake word detection so the robot remains usable.
+                if self.speech.wake_word:
+                    try:
+                        self.speech.wake_word.start_listening()
+                    except Exception:
+                        pass
+        self._set_state(RobotState.STANDBY)
 
     def _on_input_audio_level(self, input_audio_level_db: float):
         """Handle real-time input audio level updates from the audio input module (in dB)."""

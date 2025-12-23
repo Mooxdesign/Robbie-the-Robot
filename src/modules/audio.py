@@ -12,10 +12,11 @@ import wave
 import os
 import threading
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, List
 import time
 import queue
 import sys
+import re
 
 from config import Config
 
@@ -54,6 +55,72 @@ class AudioModule:
         # Initialize PyAudio
         self._initialize_pyaudio()
 
+        # Select input device (allow config override).
+        self.input_device_index = None
+        if self._pyaudio:
+            try:
+                input_device_index = config.get('audio', 'input_device_index', default=None)
+                input_device_name = config.get('audio', 'input_device_name', default=None)
+
+                if input_device_index is not None:
+                    try:
+                        self.input_device_index = int(input_device_index)
+                        dev_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                        logger.info(
+                            "[AudioModule] Input device override by index: %s (%s)",
+                            self.input_device_index,
+                            dev_info.get('name'),
+                        )
+                    except Exception as e:
+                        logger.warning("[AudioModule] Invalid input_device_index override %r: %s", input_device_index, e)
+                        self.input_device_index = None
+
+                if self.input_device_index is None and input_device_name:
+                    mic_index = self.find_audio_device_by_name(str(input_device_name))
+                    if mic_index is not None:
+                        self.input_device_index = mic_index
+                        dev_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                        logger.info(
+                            "[AudioModule] Input device override by name: %s (index: %s)",
+                            dev_info.get('name'),
+                            dev_info.get('index'),
+                        )
+                    else:
+                        logger.warning("[AudioModule] input_device_name override not found: %r", input_device_name)
+
+                if self.input_device_index is None:
+                    # Prefer known working microphones (AB13X) before generic USB audio.
+                    mic_index = None
+                    for name_hint in ["USB Audio Device"]:
+                        mic_index = self.find_audio_device_by_name(name_hint)
+                        if mic_index is not None:
+                            break
+                    if mic_index is not None:
+                        self.input_device_index = mic_index
+                        dev_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                        logger.info(
+                            "[AudioModule] Selected input device: %s (index: %s)",
+                            dev_info.get('name'),
+                            dev_info.get('index'),
+                        )
+                    else:
+                        dev_info = self._pyaudio.get_default_input_device_info()
+                        self.input_device_index = dev_info['index']
+                        logger.info(
+                            "[AudioModule] Selected default input device: %s (index: %s)",
+                            dev_info.get('name'),
+                            dev_info.get('index'),
+                        )
+
+                try:
+                    if self.input_device_index is not None:
+                        dev_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                        logger.info("[AudioModule] Input device default sample rate: %s Hz", dev_info.get('defaultSampleRate'))
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning("[AudioModule] Failed selecting input device: %s", e)
+
         # Debug: List and show selected audio input device
         if self.debug and self._pyaudio:
             logger.info("\n[AudioModule] Listing available audio input devices:")
@@ -65,18 +132,10 @@ class AudioModule:
                 except Exception as e:
                     logger.error(f"  Error getting device {i} info: {e}")
             try:
-                # Try to find USB microphone first, then fallback to default
-                mic_index = self.find_audio_device_by_name("USB Audio Device")
-                if mic_index is not None:
-                    self.input_device_index = mic_index
-                    device_info = self._pyaudio.get_device_info_by_index(mic_index)
-                    logger.info(f"[AudioModule] Found USB microphone: {device_info['name']} (index: {device_info['index']})")
-                else:
-                    # Fallback to default input device
-                    device_info = self._pyaudio.get_default_input_device_info()
-                    self.input_device_index = device_info['index']
-                    logger.info(f"[AudioModule] Using default input device: {device_info['name']} (index: {device_info['index']})")
-                logger.info(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
+                if self.input_device_index is not None:
+                    device_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                    logger.info(f"[AudioModule] Selected input device: {device_info['name']} (index: {device_info['index']})")
+                    logger.info(f"  [AudioModule] Device default sample rate: {device_info['defaultSampleRate']} Hz")
             except Exception as e:
                 logger.error(f"[AudioModule] Error getting selected device info: {e}")
 
@@ -278,30 +337,157 @@ class AudioModule:
         logger.warning(f"[AudioModule] CREATING STREAM:")
         logger.warning(f"  input={input}, output={output}")
         logger.warning(f"  device_index={device_index}")
+        logger.warning(f"  self.input_device_index={self.input_device_index}")
         logger.warning(f"  stream_type={stream_type}")
         logger.warning(f"  Stack trace:")
-        for line in traceback.format_stack()[:-1]:
-            logger.warning(f"    {line.strip()}")
-        
-        stream = self._pyaudio.open(format=format,
-                               channels=channels,
-                               rate=rate,
-                               input=input,
-                               output=output,
-                               input_device_index=self.input_device_index if input else None,
-                               output_device_index=self.output_device_index if output else None,
-                               frames_per_buffer=chunk_size,
-                               stream_callback=audio_callback)
-        logger.info(f"[AudioModule] Created stream id={stream_id} type={stream_type} device={device_index} rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}")
+        logger.warning(traceback.format_stack()[0].strip())
+
+        try:
+            if input and self.input_device_index is not None:
+                in_info = self._pyaudio.get_device_info_by_index(self.input_device_index)
+                logger.info(
+                    "[AudioModule] Input device: index=%s name=%s defaultRate=%s maxIn=%s",
+                    in_info.get("index"),
+                    in_info.get("name"),
+                    in_info.get("defaultSampleRate"),
+                    in_info.get("maxInputChannels"),
+                )
+        except Exception as e:
+            logger.warning("[AudioModule] Could not read input device info: %s", e)
+
+        # On Linux/ALSA, try to read the PCM status to detect "already in use" conditions.
+        # This is best-effort and will simply log if not available.
+        if sys.platform.startswith("linux") and input:
+            try:
+                in_name = None
+                if input and self.input_device_index is not None:
+                    in_name = self._pyaudio.get_device_info_by_index(self.input_device_index).get("name")
+                alsa_hw = self._extract_alsa_hw(in_name) if in_name else None
+                if alsa_hw:
+                    status = self._read_alsa_pcm_status(card=alsa_hw[0], device=alsa_hw[1], capture=True)
+                    if status:
+                        logger.info("[AudioModule] ALSA capture status for hw:%s,%s: %s", alsa_hw[0], alsa_hw[1], status)
+            except Exception as e:
+                logger.warning("[AudioModule] ALSA status check failed: %s", e)
+
+        try:
+            if output and self.output_device_index is not None:
+                out_info = self._pyaudio.get_device_info_by_index(self.output_device_index)
+                logger.info(
+                    "[AudioModule] Output device: index=%s name=%s defaultRate=%s maxOut=%s",
+                    out_info.get("index"),
+                    out_info.get("name"),
+                    out_info.get("defaultSampleRate"),
+                    out_info.get("maxOutputChannels"),
+                )
+        except Exception as e:
+            logger.warning("[AudioModule] Could not read output device info: %s", e)
+
+        logger.info(
+            "[AudioModule] pyaudio.open params: format=%s channels=%s rate=%s input=%s output=%s in_dev=%s out_dev=%s frames_per_buffer=%s",
+            format,
+            channels,
+            rate,
+            input,
+            output,
+            (self.input_device_index if input else None),
+            (self.output_device_index if output else None),
+            chunk_size,
+        )
+
+        # Probe format support (Linux/ALSA tends to fail with -9999 when hw params can't be set).
+        try:
+            if input and self.input_device_index is not None:
+                supported = self._pyaudio.is_format_supported(
+                    rate=rate,
+                    input_device=self.input_device_index,
+                    input_channels=channels,
+                    input_format=format,
+                )
+                logger.info(
+                    "[AudioModule] is_format_supported(input): %s (rate=%s channels=%s format=%s dev=%s)",
+                    supported,
+                    rate,
+                    channels,
+                    format,
+                    self.input_device_index,
+                )
+        except Exception as e:
+            logger.warning(
+                "[AudioModule] is_format_supported(input) raised: %s (rate=%s channels=%s format=%s dev=%s)",
+                e,
+                rate,
+                channels,
+                format,
+                self.input_device_index if input else None,
+            )
+
+        try:
+            stream = self._pyaudio.open(
+                format=format,
+                channels=channels,
+                rate=rate,
+                input=input,
+                output=output,
+                input_device_index=self.input_device_index if input else None,
+                output_device_index=self.output_device_index if output else None,
+                frames_per_buffer=chunk_size,
+                stream_callback=audio_callback,
+            )
+        except Exception as e:
+            if sys.platform.startswith("linux") and input:
+                try:
+                    in_name = None
+                    if input and self.input_device_index is not None:
+                        in_name = self._pyaudio.get_device_info_by_index(self.input_device_index).get("name")
+                    alsa_hw = self._extract_alsa_hw(in_name) if in_name else None
+                    if alsa_hw:
+                        status = self._read_alsa_pcm_status(card=alsa_hw[0], device=alsa_hw[1], capture=True)
+                        if status:
+                            logger.error(
+                                "[AudioModule] ALSA capture status at failure for hw:%s,%s: %s",
+                                alsa_hw[0],
+                                alsa_hw[1],
+                                status,
+                            )
+                except Exception:
+                    pass
+            logger.exception("[AudioModule] pyaudio.open FAILED: %s", e)
+            raise
+
+        logger.info(
+            f"[AudioModule] Created stream id={stream_id} type={stream_type} device={device_index} rate={rate}, channels={channels}, format={format}, chunk_size={chunk_size}"
+        )
         # Store stream with metadata
         self._streams[stream_id] = {
             "stream": stream,
             "callback": callback,
             "type": stream_type,
-            "device_index": device_index
+            "device_index": device_index,
         }
         
         return stream_id
+
+    def _extract_alsa_hw(self, device_name: str | None):
+        """Extract (card,device) ints from strings like '... (hw:2,0)' or 'hw:2,0'."""
+        if not device_name:
+            return None
+        m = re.search(r"hw:(\d+),(\d+)", device_name)
+        if not m:
+            return None
+        return int(m.group(1)), int(m.group(2))
+
+    def _read_alsa_pcm_status(self, card: int, device: int, capture: bool) -> str | None:
+        """Read /proc/asound/cardX/pcmY{c|p}/sub0/status (Linux only)."""
+        suffix = "c" if capture else "p"
+        path = f"/proc/asound/card{card}/pcm{device}{suffix}/sub0/status"
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return " ".join(line.strip() for line in f if line.strip())
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
         
     def start_stream(self, stream_id: str):
         """
@@ -403,20 +589,36 @@ class AudioModule:
         """
         if not self._pyaudio:
             return None
-            
+        
+        # Exact match or hw:X,Y notation match only (no substring fallback)
+        print(f"[DEBUG find_audio_device_by_name] Searching for: '{name_substring}'")
         for i in range(self._pyaudio.get_device_count()):
             try:
                 info = self._pyaudio.get_device_info_by_index(i)
-                if name_substring.lower() in info['name'].lower():
-                    # Check if device has input OR output channels
+                device_name = info['name'].lower()
+                search_name = name_substring.lower()
+                
+                # Exact match or hw:X,Y notation match
+                exact_match = device_name == search_name
+                starts_match = device_name.startswith(search_name + ":")
+                hw_match = f"({search_name})" in device_name
+                
+                print(f"  [{i}] '{info['name']}' - exact:{exact_match} starts:{starts_match} hw:{hw_match} maxIn:{info.get('maxInputChannels', 0)}")
+                
+                if exact_match or starts_match or hw_match:
                     if info.get('maxInputChannels', 0) > 0 or info.get('maxOutputChannels', 0) > 0:
                         device_type = "input" if info.get('maxInputChannels', 0) > 0 else "output"
-                        if self.debug:
-                            logger.info(f"Found {device_type} device: [{i}] {info['name']}")
+                        print(f"  -> MATCH! Returning index {i}")
+                        logger.info(f"Found {device_type} device: [{i}] {info['name']}")
                         return i
+                    else:
+                        print(f"  -> Match found but no input/output channels!")
             except Exception as e:
-                if self.debug:
-                    logger.error(f"Error checking device {i}: {e}")
+                print(f"  ERROR checking device {i}: {e}")
+                logger.error(f"Error checking device {i}: {e}")
+        
+        print(f"[DEBUG find_audio_device_by_name] Device NOT FOUND: '{name_substring}'")
+        logger.warning(f"[find_audio_device_by_name] Device not found: '{name_substring}'")
         return None
 
     def play_sound(self, filename: str, output_device_index: Optional[int] = None) -> None:
