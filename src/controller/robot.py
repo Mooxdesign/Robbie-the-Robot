@@ -34,24 +34,13 @@ class RobotController:
         self.debug = debug
         self._state = RobotState.STANDBY
         self.audio = AudioModule(debug=debug)
-        # Minimal switch to disable voice stack on low-power devices
-        voice_enabled = True
-        try:
-            voice_enabled = bool(self.config.get('features', 'voice_enabled', default=True))
-        except Exception:
-            voice_enabled = True
-        self._speech_backend = None
+        
+        # Initialize voice subsystems if enabled
+        voice_enabled = self.config.get('features', 'voice_enabled', default=True)
         if voice_enabled:
-            self.speech = SpeechController(self, self.audio, debug=debug, backend=self._speech_backend)
+            self.speech = SpeechController(self, self.audio, debug=debug, backend=None)
             self.audio.add_output_audio_level_callback(self._on_output_audio_level)
             self.conversation = ConversationController(debug=debug)
-        # Other subsystems (example):
-        # self.leds = LedsController(self.audio, debug=debug)
-        # self.vision = VisionModule(debug=debug)
-        # self.motors = MotorModule(debug=debug)
-        # self.drive = DriveController(self.motors, debug=debug)
-        # self.joystick = JoystickController(on_update=self._on_controller_update, joystick_id=0, poll_hz=60.0)
-        # (Uncomment and adjust above lines as per your actual initialization logic)
 
         self.leds = LedsController(self.audio, debug=debug)
         self.vision = VisionModule(debug=debug)
@@ -59,12 +48,16 @@ class RobotController:
         self.drive = DriveController(self.motors, debug=debug)
 
         # Joystick controller (publishes via state_update_callback)
+        joystick_deadzone = self.config.get('joystick', 'deadzone', default=0.10)
+        joystick_smoothing = self.config.get('joystick', 'smoothing', default=0.3)
         self.joystick: JoystickController | None = JoystickController(
             on_update=self._on_controller_update,
             joystick_id=0,
             poll_hz=60.0,
             debug=debug,
             config=self.config.config,
+            deadzone=joystick_deadzone,
+            smoothing=joystick_smoothing,
         )
         
         # Register custom joystick action handler for wake_robot
@@ -154,22 +147,21 @@ class RobotController:
                 if self.speech.wake_word:
                     try:
                         self.speech.wake_word.start_listening()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Failed to restart wake word detection: {e}")
         self._set_state(RobotState.STANDBY)
 
     def _on_input_audio_level(self, input_audio_level_db: float):
         """Handle real-time input audio level updates from the audio input module (in dB)."""
         import time
         now = time.time()
-        # Throttle: only send if 100ms have passed or value changed by >1 dB
         if not hasattr(self, '_last_input_audio_level_sent'):
             self._last_input_audio_level_sent = None
             self._last_input_audio_level_time = 0
         send = False
         if (
             self._last_input_audio_level_sent is None or
-            abs(input_audio_level_db - self._last_input_audio_level_sent) > 1 or
+            abs(input_audio_level_db - self._last_input_audio_level_sent) > 1.0 or
             now - self._last_input_audio_level_time > 0.1
         ):
             send = True
@@ -183,14 +175,13 @@ class RobotController:
         """Handle real-time output audio level updates from the output (loopback) device (in dB)."""
         import time
         now = time.time()
-        # Throttle: only send if 100ms have passed or value changed by >1 dB
         if not hasattr(self, '_last_output_audio_level_sent'):
             self._last_output_audio_level_sent = None
             self._last_output_audio_level_time = 0
         send = False
         if (
             self._last_output_audio_level_sent is None or
-            abs(output_audio_level_db - self._last_output_audio_level_sent) > 1 or
+            abs(output_audio_level_db - self._last_output_audio_level_sent) > 1.0 or
             now - self._last_output_audio_level_time > 0.1
         ):
             send = True
@@ -211,20 +202,20 @@ class RobotController:
                 buttons = js.get('buttons') or []
                 try:
                     self.drive.on_joystick_update(axes, buttons)
-                    # Attach motor telemetry for API/UI
                     motor_snapshot = self.motors.snapshot()
                     motor_snapshot['enabled'] = bool(self.drive.is_enabled())
                     motor_snapshot['mode'] = 'arcade'
                     update['motor'] = motor_snapshot
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    if self.debug:
+                        logger.error(f"Failed to process joystick update: {e}")
+        except Exception as e:
+            logger.error(f"Error in controller update: {e}")
         if self.state_update_callback:
             try:
                 self.state_update_callback(update)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"State update callback failed: {e}")
 
     def _cleanup(self):
         if self.leds:
@@ -242,5 +233,5 @@ class RobotController:
         if hasattr(self, 'motors') and self.motors:
             try:
                 self.motors.cleanup()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to cleanup motors: {e}")

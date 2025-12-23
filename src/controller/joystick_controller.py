@@ -18,12 +18,16 @@ class JoystickController:
                  joystick_id: int = 0,
                  poll_hz: float = 60.0,
                  debug: bool = False,
-                 config: Dict[str, Any] = None) -> None:
+                 config: Dict[str, Any] = None,
+                 deadzone: float = 0.10,
+                 smoothing: float = 0.3) -> None:
         self.on_update = on_update
         self.joystick_id = joystick_id
         self.poll_dt = 1.0 / max(1.0, float(poll_hz))
         self.debug = debug
         self.config = config or {}
+        self.deadzone = deadzone
+        self.smoothing = smoothing
 
         self._thread: threading.Thread | None = None
         self._running = False
@@ -63,7 +67,13 @@ class JoystickController:
     def _run(self) -> None:
         # Create the existing joystick module in no-thread mode and drive it here
         try:
-            jm = JoystickModule(joystick_id=self.joystick_id, debug=self.debug, run_threaded=False)
+            jm = JoystickModule(
+                joystick_id=self.joystick_id, 
+                debug=self.debug, 
+                run_threaded=False,
+                deadzone=self.deadzone,
+                smoothing=self.smoothing
+            )
             jm.set_snapshot_callback(lambda axes, buttons: self._forward_snapshot(axes, buttons))
             
             # Register button actions and combinations from config
@@ -107,8 +117,8 @@ class JoystickController:
                 }
             }
             self.on_update(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to forward joystick snapshot: {e}")
     
     def _register_default_action_handlers(self) -> None:
         """Register default action handlers"""

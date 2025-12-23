@@ -17,19 +17,16 @@ class Config:
             config_path: Path to config file, defaults to config.yaml in project root
         """
         if config_path is None:
-            # Search for config.yaml starting from current file location up to root
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            while current_dir != os.path.dirname(current_dir):  # Stop at filesystem root
+            while current_dir != os.path.dirname(current_dir):
                 candidate = os.path.join(current_dir, 'config.yaml')
                 if os.path.exists(candidate):
                     config_path = candidate
                     break
                 current_dir = os.path.dirname(current_dir)
             
-            # Fallback to old behavior if not found
             if config_path is None:
-                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                config_path = os.path.join(root_dir, 'config.yaml')
+                raise FileNotFoundError("config.yaml not found in any parent directory")
 
         self.config_path = config_path
 

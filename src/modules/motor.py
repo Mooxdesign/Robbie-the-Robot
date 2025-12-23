@@ -33,10 +33,6 @@ class MotorModule:
     """
     
     def __init__(self, debug: bool = False):
-        self._left_arm_position = 0.0
-        self._right_arm_position = 0.0
-        self._head_pan = None
-        self._head_tilt = None
         """
         Initialize motor controller
         
@@ -44,6 +40,10 @@ class MotorModule:
             debug: Enable debug output
         """
         self.debug = debug
+        self._left_arm_position = 0.0
+        self._right_arm_position = 0.0
+        self._head_pan = None
+        self._head_tilt = None
         self._lock = threading.Lock()
         
         # Load config
@@ -117,9 +117,6 @@ class MotorModule:
             left: Left motor speed (-1 to 1)
             right: Right motor speed (-1 to 1)
         """
-        logger.debug("Motor update loop started")
-        logger.info(self.motor_kit)
-
         with self._lock:
             self.left_speed = max(min(left, self.max_speed), -self.max_speed)
             self.right_speed = max(min(right, self.max_speed), -self.max_speed)
@@ -309,8 +306,8 @@ class MotorModule:
     def _update_loop(self):
         """Update motor speeds with acceleration limiting"""
         last_update = time.time()
-        logger.info("Motor update loop started")
-        logger.info(self.motor_kit)
+        if self.debug:
+            logger.debug(f"Motor update loop started (motor_kit available: {self.motor_kit is not None})")
         while self.is_running:
             current_time = time.time()
             dt = current_time - last_update
@@ -320,17 +317,13 @@ class MotorModule:
             logger.debug(f"[DEBUG] motor_kit={self.motor_kit}, left_speed={self.left_speed:.2f}, right_speed={self.right_speed:.2f}")
 
             with self._lock:
-                # Set motor speeds
                 if self.motor_kit:
                     try:
                         self.motor_kit.motor1.throttle = self.left_speed
                         self.motor_kit.motor2.throttle = self.left_speed
                         self.motor_kit.motor3.throttle = self.right_speed
                         self.motor_kit.motor4.throttle = self.right_speed
-                    except Exception:
-                        logger.error("[MOTOR] Failed to set any motor throttle!")
-                        pass
-                    self._last_hw_left = self.left_speed
-                    self._last_hw_right = self.right_speed
+                    except Exception as e:
+                        logger.error(f"[MOTOR] Failed to set motor throttle: {e}")
             # Sleep to maintain update rate
             time.sleep(1 / self.update_rate)

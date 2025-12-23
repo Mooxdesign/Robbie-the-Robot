@@ -230,10 +230,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif cmd_type == "chat":
                     # Handle typed chat from web interface
                     chat_text = command.get("text", "")
-                    # Import robot controller instance
                     from controller.robot import robot_instance
                     response = None
-                    if hasattr(robot_instance, "speech"):
+                    if robot_instance and hasattr(robot_instance, "speech"):
                         # Simulate transcription callback
                         response = robot_instance.speech.on_transcription(chat_text)
                     # Always set last_transcription to the user prompt
@@ -242,7 +241,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     robot_state["last_response"] = response if response else ""
 
                     # Always update chat_history from conversation module
-                    if hasattr(robot_instance, "conversation"):
+                    if robot_instance and hasattr(robot_instance, "conversation"):
                         robot_state["chat_history"] = robot_instance.conversation.get_chat_history()
                         # Broadcast chat_history as a dedicated message
                         import asyncio
@@ -265,10 +264,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info(f"[WS] robot_instance={robot_instance}, has leds={hasattr(robot_instance, 'leds')}")
                     if robot_instance and hasattr(robot_instance, "leds"):
                         animation = command.get("animation")
-                        duration = command.get("duration") # Get duration instead of loop
+                        duration = command.get("duration")
                         logger.info(f"[WS] Dispatching to leds.start_animation: {animation}, duration={duration}")
                         try:
-                            getattr(robot_instance.leds, "start_animation")(animation, duration=duration)
+                            robot_instance.leds.start_animation(animation, duration=duration)
                             logger.info(f"[WS] leds.start_animation call completed for {animation}")
                         except Exception as e:
                             logger.error(f"[WS] Exception in leds.start_animation: {e}")
@@ -280,7 +279,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info(f"[WS] stop_led_animation command received: {command}")
                     from controller.robot import robot_instance
                     if robot_instance and hasattr(robot_instance, "leds"):
-                        getattr(robot_instance.leds, "stop_animation")()
+                        robot_instance.leds.stop_animation()
                         leds_module = getattr(robot_instance.leds, "leds", None)
                         if leds_module:
                             leds_module.show()

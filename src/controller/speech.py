@@ -67,103 +67,74 @@ class SpeechController:
 
     def on_wake_word(self):
         if self.debug:
-            logger.info(f"[SpeechController] Wake word detected (state: {self.parent._state})")
+            logger.info("[SpeechController] Wake word detected")
         self.parent.wake_up()
 
     def on_transcription(self, text):
-        logger.info(f"[SpeechController] === TRANSCRIPTION CALLBACK START ===")
-        logger.info(f"[SpeechController] Transcription received: '{text}'")
-        logger.info(f"[SpeechController] Current parent state: {self.parent._state}")
+        if self.debug:
+            logger.debug(f"[SpeechController] Transcription received: '{text}' (state: {self.parent._state})")
+        
         try:
-            # Synchronize with speech_to_text lock and transcription_in_progress flag
             with self.speech_to_text._lock:
-                logger.info(f"[SpeechController] transcription_in_progress was: {self.speech_to_text.transcription_in_progress}")
-                self.speech_to_text.transcription_in_progress = False  # Mark as done
-                logger.info(f"[SpeechController] transcription_in_progress set to: False")
+                self.speech_to_text.transcription_in_progress = False
                 if not text:
-                    logger.warning(f"[SpeechController] Empty transcription received, returning None")
+                    logger.warning("[SpeechController] Empty transcription received")
                     return None
-                # Notify API/server of transcription update
+            
             if hasattr(self.parent, 'state_update_callback') and self.parent.state_update_callback:
-                logger.info(f"[SpeechController] Broadcasting transcription update")
                 self.parent.state_update_callback({"type": "update_transcription", "last_transcription": text})
+            
+            if self.debug:
+                logger.info(f"Transcribed: {text}")
+            
+            if text.lower().strip() == "thanks robbie":
                 if self.debug:
-                    logger.info(f"Transcribed: {text}")
-                if text.lower().strip() == "thanks robbie":
-                    logger.info(f"[SpeechController] 'thanks robbie' detected, returning to standby")
-                    self.parent._return_to_standby()
-                    return None
-                logger.info(f"[SpeechController] Setting state to PROCESSING")
-                self.parent._set_state(RobotState.PROCESSING)
-                logger.info(f"[SpeechController] Calling conversation.chat()...")
-                response = self.parent.conversation.chat(text)
-                logger.info(f"[SpeechController] Conversation response: '{response}'")
-                if response:
-                    logger.info(f"[SpeechController] Got response: '{response}'")
-                    logger.info(f"[SpeechController] Response type: {type(response)}")
-                    logger.info(f"[SpeechController] About to stop listening and start speaking")
-                    try:
-                        logger.info(f"[SpeechController] Calling stop_listening()...")
-                        self.speech_to_text.stop_listening()
-                        logger.info(f"[SpeechController] stop_listening() completed")
-                    except Exception as e:
-                        logger.error(f"[SpeechController] stop_listening() error: {e}")
-                        logger.exception(f"[SpeechController] Full traceback:")
-                    try:
-                        logger.info(f"[SpeechController] Setting state to SPEAKING")
-                        self.parent._set_state(RobotState.SPEAKING)
-                        logger.info(f"[SpeechController] State set to SPEAKING")
-                    except Exception as e:
-                        logger.error(f"[SpeechController] _set_state(SPEAKING) error: {e}")
-                        logger.exception(f"[SpeechController] Full traceback:")
-                    try:
-                        logger.info(f"[SpeechController] Calling voice.say() with response...")
-                        self.voice.say(response, blocking=False)
-                        logger.info(f"[SpeechController] voice.say() call completed")
-                    except Exception as e:
-                        logger.error(f"[SpeechController] voice.say() error: {str(e)}")
-                        logger.exception(f"[SpeechController] Full traceback:")
-                    logger.info(f"[SpeechController] === TRANSCRIPTION CALLBACK SUCCESS ===")
-                    return response
-                else:
-                    logger.warning(f"[SpeechController] No response from AI, returning to LISTENING")
-                    self.parent._set_state(RobotState.LISTENING)
-                    return None
-        except Exception as e:
-            logger.error(f"[SpeechController] === TRANSCRIPTION CALLBACK ERROR ===")
-            logger.exception(f"[SpeechController] Unhandled exception in on_transcription: {e}")
-            try:
-                logger.debug(f"[SpeechController] About to call self.voice.say with: {response}")
-                self.voice.say(response, blocking=False)
-                logger.debug(f"[SpeechController] self.voice.say call complete")
-            except Exception as e:
-                logger.error(f"[SpeechController] Error calling self.voice.say: {str(e)}")
+                    logger.info("[SpeechController] Exit phrase detected, returning to standby")
+                self.parent._return_to_standby()
+                return None
+            
+            self.parent._set_state(RobotState.PROCESSING)
+            response = self.parent.conversation.chat(text)
+            
+            if response:
+                try:
+                    self.speech_to_text.stop_listening()
+                except Exception as e:
+                    logger.error(f"[SpeechController] Failed to stop listening: {e}")
+                
+                try:
+                    self.parent._set_state(RobotState.SPEAKING)
+                    self.voice.say(response, blocking=False)
+                except Exception as e:
+                    logger.error(f"[SpeechController] Failed to speak response: {e}")
+                
+                return response
             else:
-                logger.warning("No response from AI")
+                logger.warning("[SpeechController] No response from AI")
                 self.parent._set_state(RobotState.LISTENING)
+                return None
+                
+        except Exception as e:
+            logger.error(f"[SpeechController] Error in transcription callback: {e}", exc_info=True)
+            self.parent._set_state(RobotState.LISTENING)
             return None
 
     def on_speech_complete(self):
-        # Always start listening after speech completes, and set state to LISTENING
         if self.debug:
-            logger.info("[on_speech_complete] Speech finished. Transitioning to LISTENING and starting speech-to-text.")
+            logger.info("[SpeechController] Speech complete - transitioning to LISTENING")
         self.parent._set_state(RobotState.LISTENING)
         self.speech_to_text.start_listening()
-        # Do NOT return to standby here. Standby should only be triggered by the silence timeout callback from SpeechToTextModule.
 
     def on_silence_timeout(self):
-        # Called when silence timeout is triggered in SpeechToTextModule
-        logger.info(f"[SpeechController] === SILENCE TIMEOUT CALLBACK ===")
         with self.speech_to_text._lock:
-            logger.info(f"[SpeechController] transcription_in_progress: {self.speech_to_text.transcription_in_progress}")
             if self.speech_to_text.transcription_in_progress:
-                logger.info("[SpeechController] Silence timeout ignored: transcription in progress")
+                if self.debug:
+                    logger.debug("[SpeechController] Silence timeout ignored: transcription in progress")
                 return
-            if self.debug:
-                logger.info("[on_silence_timeout] Silence timeout occurred. Returning to STANDBY.")
-            logger.info(f"[SpeechController] Calling parent._return_to_standby()...")
-            self.parent._return_to_standby()
-            logger.info(f"[SpeechController] === SILENCE TIMEOUT COMPLETE ===")
+        
+        if self.debug:
+            logger.info("[SpeechController] Silence timeout - returning to STANDBY")
+        self.parent._return_to_standby()
 
     def cleanup(self):
         for mod in (self.wake_word, self.speech_to_text, self.voice):

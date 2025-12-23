@@ -1,5 +1,8 @@
 import math
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DriveController:
     def __init__(self, motors, debug: bool = False):
@@ -13,9 +16,14 @@ class DriveController:
         self._last_head_update = time.time()
         self._last_head_command_time = time.time()
         
-        # Load head control config
+        # Load config
         from config import Config
         config = Config()
+        
+        # Load joystick deadzone from config
+        self.deadzone = config.get('joystick', 'deadzone', default=0.10)
+        
+        # Load head control config
         self.head_control = config.get('joystick', 'head_control', default={
             'mode': 'absolute',
             'velocity_speed': 90.0,
@@ -41,8 +49,8 @@ class DriveController:
         if not self._enabled:
             try:
                 self.motors.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to stop motors: {e}")
 
     def is_enabled(self) -> bool:
         return bool(self._enabled)
@@ -64,8 +72,9 @@ class DriveController:
         if not enabled:
             try:
                 self.motors.set_motor_speeds(0.0, 0.0)
-            except Exception:
-                pass
+            except Exception as e:
+                if self.debug:
+                    logger.error(f"Failed to set motor speeds to zero: {e}")
             return
 
         fwd = 0.0
@@ -79,10 +88,9 @@ class DriveController:
         except Exception:
             turn = 0.0
 
-        dz = 0.10
-        if abs(fwd) < dz:
+        if abs(fwd) < self.deadzone:
             fwd = 0.0
-        if abs(turn) < dz:
+        if abs(turn) < self.deadzone:
             turn = 0.0
 
         left = fwd + turn
@@ -94,8 +102,9 @@ class DriveController:
 
         try:
             self.motors.set_motor_speeds(left, right)
-        except Exception:
-            pass
+        except Exception as e:
+            if self.debug:
+                logger.error(f"Failed to set motor speeds: {e}")
 
         # Head control (right thumbstick)
         try:
@@ -119,12 +128,12 @@ class DriveController:
             
             # Only update at configured rate to prevent jitter
             if current_time - self._last_head_command_time >= self._head_update_interval:
-                if abs(pan_axis) >= dz:
+                if abs(pan_axis) >= self.deadzone:
                     self._head_pan_target += pan_axis * dt
                     self._head_pan_target = max(-1.0, min(1.0, self._head_pan_target))
                     position_updated = True
                 
-                if abs(tilt_axis) >= dz:
+                if abs(tilt_axis) >= self.deadzone:
                     self._head_tilt_target += tilt_axis * dt
                     self._head_tilt_target = max(-1.0, min(1.0, self._head_tilt_target))
                     position_updated = True
@@ -134,21 +143,23 @@ class DriveController:
                     try:
                         self.motors.move_head(pan=self._head_pan_target, tilt=self._head_tilt_target)
                         self._last_head_command_time = current_time
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        if self.debug:
+                            logger.error(f"Failed to move head (velocity mode): {e}")
         else:
             # Absolute mode: axis directly controls position (normalized -1 to 1)
             pan_cmd = None
             tilt_cmd = None
-            if abs(pan_axis) >= dz:
+            if abs(pan_axis) >= self.deadzone:
                 pan_cmd = pan_axis  # Already normalized -1.0 to 1.0
-            if abs(tilt_axis) >= dz:
+            if abs(tilt_axis) >= self.deadzone:
                 tilt_cmd = tilt_axis  # Already normalized -1.0 to 1.0
             if pan_cmd is not None or tilt_cmd is not None:
                 try:
                     self.motors.move_head(pan=pan_cmd, tilt=tilt_cmd)
-                except Exception:
-                    pass
+                except Exception as e:
+                    if self.debug:
+                        logger.error(f"Failed to move head (absolute mode): {e}")
 
         # Arm control (triggers)
         try:
@@ -160,19 +171,21 @@ class DriveController:
         except Exception:
             right_arm_axis = None
         if left_arm_axis is not None:
-            if abs(left_arm_axis) >= dz:
+            if abs(left_arm_axis) >= self.deadzone:
                 pos = (left_arm_axis + 1.0) * 0.5
                 try:
                     self.motors.move_arm('left', pos)
-                except Exception:
-                    pass
+                except Exception as e:
+                    if self.debug:
+                        logger.error(f"Failed to move left arm: {e}")
         if right_arm_axis is not None:
-            if abs(right_arm_axis) >= dz:
+            if abs(right_arm_axis) >= self.deadzone:
                 pos = (right_arm_axis + 1.0) * 0.5
                 try:
                     self.motors.move_arm('right', pos)
-                except Exception:
-                    pass
+                except Exception as e:
+                    if self.debug:
+                        logger.error(f"Failed to move right arm: {e}")
 
     def _initialize_head_position(self):
         """Initialize head position targets to center"""

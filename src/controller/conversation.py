@@ -1,6 +1,8 @@
 from modules.llm import LlmModule
-
-import asyncio, json, logging
+from config import Config
+import asyncio
+import json
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -8,15 +10,18 @@ class ConversationController:
     def __init__(self, debug=False, api_key=None):
         self.llm = LlmModule(api_key=api_key, debug=debug)
         self.debug = debug
+        
+        # Load config
+        config = Config()
+        
         self.conversation_history = [
             {
                 "role": "system",
                 "content": "You are Robbie the Robot, a kind but goofy robot built by Heidi and Heidi's daddy. Your responses should be interesting, and suitable for a 10 year old. No sound effects like 'beep boop'. You are also fascinated by space. "
-                # "content": "You are Robbie the Robot, a killer robot who is made of cardboard and has motorised wheels and moveable arms/head, a speaker to talk, a mic to listen, and you're controlled by a games controller. You're quite proud of yourself. You're also not modest and you're malevolent"
             }
         ]
-        self.max_history = 10
-        self.temperature = 0.7
+        self.max_history = config.get('ai', 'max_history', default=10)
+        self.temperature = config.get('ai', 'temperature', default=0.7)
 
     def chat(self, text):
         # Add user message
@@ -41,24 +46,24 @@ class ConversationController:
         return response_text
 
     def _broadcast_chat_history(self, sender):
+        """Broadcast chat history to API clients if available."""
         try:
             from api.app import robot_state, manager
-            # Update robot_state and broadcast to all clients
             robot_state["chat_history"] = self.get_chat_history()
-            # Broadcast as a dedicated message
+            
             try:
-                # Try to get the running event loop
                 loop = asyncio.get_running_loop()
                 asyncio.create_task(manager.broadcast(json.dumps({
                     "type": "chat_history",
                     "chat_history": robot_state["chat_history"]
                 })))
             except RuntimeError:
-                # No event loop running (e.g., in tests), skip broadcast
                 pass
-        except Exception as e:
-            # Silently fail if API is not available (e.g., in tests)
+        except ImportError:
             pass
+        except Exception as e:
+            if self.debug:
+                logger.error(f"Failed to broadcast chat history: {e}")
 
 
     def cleanup(self):

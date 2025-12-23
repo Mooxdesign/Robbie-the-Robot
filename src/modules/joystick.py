@@ -6,7 +6,7 @@ from typing import Dict, Optional, Callable, List, Tuple, Set
 import pygame
 import logging
 import json
-DEADZONE = 0.10  # Hardcoded deadzone for stick axes (apply to indices 0..3 only)
+
 logger = logging.getLogger(__name__)
 
 class Joystick:
@@ -17,7 +17,9 @@ class Joystick:
     def __init__(self, 
                  joystick_id: int = 0,
                  debug: bool = False,
-                 run_threaded: bool = True):
+                 run_threaded: bool = True,
+                 deadzone: float = 0.10,
+                 smoothing: float = 0.3):
         """
         Initialize joystick module
         
@@ -28,6 +30,8 @@ class Joystick:
         self.debug = debug
         self._lock = threading.Lock()
         self._run_threaded = run_threaded
+        self.deadzone = deadzone
+        self.smoothing = smoothing
         
             # Initialize ONLY the joystick subsystem, not audio
             # pygame.init() would initialize audio mixer which locks the audio device
@@ -178,15 +182,15 @@ class Joystick:
         
     def _process_input(self):
         """Main input processing loop"""
-        smoothing = 0.3  # Smoothing factor for axis values
-        
         while self.is_running:
-            self.process_once(smoothing)
+            self.process_once(self.smoothing)
 
             time.sleep(0.01)  # Prevent excessive CPU usage
 
-    def process_once(self, smoothing: float = 0.3):
+    def process_once(self, smoothing: float = None):
         """Process a single input tick: pump events, read axes/buttons, emit snapshot if changed."""
+        if smoothing is None:
+            smoothing = self.smoothing
         # Process pygame events
         pygame.event.pump()
         # Detect hot-unplug: if we had a joystick but now count==0, emit disconnect
@@ -253,7 +257,7 @@ class Joystick:
                 for i in range(num_axes):
                     value = self.joystick.get_axis(i)
                     # Apply deadzone only to stick axes (0..3)
-                    if i < 4 and abs(value) < DEADZONE:
+                    if i < 4 and abs(value) < self.deadzone:
                         value = 0.0
                     # Store raw value
                     self.axis_values[i] = value
