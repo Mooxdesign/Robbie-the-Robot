@@ -2,9 +2,10 @@
 
 import threading
 import time
-from typing import Dict, Optional, Callable, List, Tuple
+from typing import Dict, Optional, Callable, List, Tuple, Set
 import pygame
 import logging
+import json
 DEADZONE = 0.10  # Hardcoded deadzone for stick axes (apply to indices 0..3 only)
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,11 @@ class Joystick:
         self.axis_handlers = {}  # Callbacks for axis changes
         self.button_handlers = {}  # Callbacks for button presses
         self._snapshot_cb = None  # Callback for full-state snapshots (axes, buttons)
+        
+        # Button combination tracking
+        self.combination_handlers = {}  # Callbacks for button combinations
+        self._active_combinations = {}  # Track active combinations and their start times
+        self._triggered_combinations = set()  # Track which combinations have been triggered
         
         # Control thread
         self.is_running = False
@@ -139,6 +145,28 @@ class Joystick:
         Register a callback that receives the full axes/buttons snapshot when they change.
         """
         self._snapshot_cb = cb
+    
+    def add_combination_handler(self,
+                               buttons: List[int],
+                               handler: Callable[[str], None],
+                               action: str,
+                               hold_time: float = 0.0):
+        """
+        Add handler for button combinations
+        
+        Args:
+            buttons: List of button numbers that must be pressed together
+            handler: Function to call with action name when combination is triggered
+            action: Action name to pass to handler
+            hold_time: Time in seconds buttons must be held before triggering
+        """
+        combo_key = tuple(sorted(buttons))
+        self.combination_handlers[combo_key] = {
+            'handler': handler,
+            'action': action,
+            'hold_time': hold_time,
+            'buttons': buttons
+        }
         
     def get_axis(self, axis: int) -> float:
         """Get current value of an axis"""
@@ -247,6 +275,9 @@ class Joystick:
                             logger.info(f"[Joystick] button {i} {'down' if value else 'up'}")
                         if i in self.button_handlers:
                             self.button_handlers[i](value)
+                
+                # Process button combinations
+                self._process_combinations()
 
                 # Process hats (D-pad). Represent each hat as 4 virtual buttons: [up, down, left, right]
                 virtual_hat_buttons = []
@@ -314,6 +345,45 @@ class Joystick:
                     except Exception:
                         pass
             
+    def _process_combinations(self):
+        """Check for active button combinations and trigger handlers"""
+        if not self.combination_handlers:
+            return
+        
+        current_time = time.time()
+        pressed_buttons = {btn for btn, state in self.button_values.items() if state}
+        
+        # Check each registered combination
+        for combo_key, combo_info in self.combination_handlers.items():
+            combo_set = set(combo_key)
+            
+            # Check if all buttons in combination are pressed
+            if combo_set.issubset(pressed_buttons):
+                # Combination is active
+                if combo_key not in self._active_combinations:
+                    # New combination press
+                    self._active_combinations[combo_key] = current_time
+                    if self.debug:
+                        logger.info(f"[Joystick] Combination started: {list(combo_key)}")
+                else:
+                    # Check if hold time has been met
+                    hold_duration = current_time - self._active_combinations[combo_key]
+                    if hold_duration >= combo_info['hold_time'] and combo_key not in self._triggered_combinations:
+                        # Trigger the combination
+                        self._triggered_combinations.add(combo_key)
+                        if self.debug:
+                            logger.info(f"[Joystick] Combination triggered: {list(combo_key)} -> {combo_info['action']}")
+                        try:
+                            combo_info['handler'](combo_info['action'])
+                        except Exception as e:
+                            logger.error(f"Error in combination handler: {e}")
+            else:
+                # Combination is no longer active
+                if combo_key in self._active_combinations:
+                    del self._active_combinations[combo_key]
+                    if combo_key in self._triggered_combinations:
+                        self._triggered_combinations.remove(combo_key)
+    
     def cleanup(self):
         """Clean up joystick resources"""
         self.stop()

@@ -9,30 +9,23 @@ motor:
     max_speed: 1.0
     update_rate: 50
   servos:
-    head_pan:
-      channel: 0
-      min_pulse: 500
-      max_pulse: 2500
-      min_angle: -90
-      max_angle: 90
-    head_tilt:
-      channel: 1
-      min_pulse: 500
-      max_pulse: 2500
-      min_angle: -45
-      max_angle: 45
     left_arm:
-      channel: 2
-      min_pulse: 500
+      channel: 0
+      min_pulse: 800
       max_pulse: 2500
-      min_angle: 0
-      max_angle: 180
     right_arm:
-      channel: 3
+      channel: 1
+      min_pulse: 700
+      max_pulse: 2400
+    head_pan:
+      channel: 14
       min_pulse: 500
-      max_pulse: 2500
-      min_angle: 0
-      max_angle: 180
+      max_pulse: 2200
+    head_tilt:
+      channel: 15
+      min_pulse: 1000
+      center_pulse: 1500  # Keep for asymmetric tilt if needed
+      max_pulse: 1800
 vision:
   camera:
     width: 640
@@ -78,6 +71,59 @@ joystick:
     mode: "absolute"  # "absolute" or "velocity"
     velocity_speed: 90.0  # degrees per second for velocity mode
     update_rate: 30  # Hz - how often to update position in velocity mode
+  button_actions:
+    # Single button actions
+    0:  # A button
+      action: "confirm"
+      description: "Confirm action"
+    1:  # B button
+      action: "cancel"
+      description: "Cancel action"
+    2:  # X button
+      action: "wave"
+      description: "Wave gesture"
+    3:  # Y button
+      action: "wake_robot"
+      description: "Wake the robot"
+    4:  # Left bumper
+      action: "look_left"
+      description: "Quick look left"
+    5:  # Right bumper
+      action: "look_right"
+      description: "Quick look right"
+    6:  # Back/Select
+      action: "reset_position"
+      description: "Reset to neutral position"
+    7:  # Start
+      action: "emergency_stop"
+      description: "Emergency stop all motors"
+  button_combinations:
+    # Button combinations (list of buttons that must be pressed together)
+    # Format: [button1, button2, ...]: action_config
+    "[4, 5]":  # Both bumpers
+      action: "center_head"
+      description: "Center head position"
+      hold_time: 0.5  # Seconds to hold before triggering
+    "[0, 1]":  # A + B
+      action: "calibrate"
+      description: "Calibrate servos"
+      hold_time: 1.0
+    "[6, 7]":  # Back + Start
+      action: "shutdown"
+      description: "Graceful shutdown"
+      hold_time: 2.0
+    "[2, 3]":  # X + Y
+      action: "toggle_voice"
+      description: "Toggle voice recognition"
+      hold_time: 0.3
+    "[4, 0]":  # Left bumper + A
+      action: "save_position"
+      description: "Save current servo positions"
+      hold_time: 0.5
+    "[5, 0]":  # Right bumper + A
+      action: "load_position"
+      description: "Load saved servo positions"
+      hold_time: 0.5
 sensors:
   update_rate: 52
   threshold: 98

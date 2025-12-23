@@ -120,13 +120,13 @@ class DriveController:
             # Only update at configured rate to prevent jitter
             if current_time - self._last_head_command_time >= self._head_update_interval:
                 if abs(pan_axis) >= dz:
-                    self._head_pan_target += pan_axis * self.head_control['velocity_speed'] * dt
-                    self._head_pan_target = max(-90, min(90, self._head_pan_target))
+                    self._head_pan_target += pan_axis * dt
+                    self._head_pan_target = max(-1.0, min(1.0, self._head_pan_target))
                     position_updated = True
                 
                 if abs(tilt_axis) >= dz:
-                    self._head_tilt_target += tilt_axis * 30.0 * dt  # 30 degrees per second max for tilt
-                    self._head_tilt_target = max(-45, min(45, self._head_tilt_target))
+                    self._head_tilt_target += tilt_axis * dt
+                    self._head_tilt_target = max(-1.0, min(1.0, self._head_tilt_target))
                     position_updated = True
                 
                 # Only send update if position changed
@@ -137,13 +137,13 @@ class DriveController:
                     except Exception:
                         pass
         else:
-            # Absolute mode: axis directly controls position
+            # Absolute mode: axis directly controls position (normalized -1 to 1)
             pan_cmd = None
             tilt_cmd = None
             if abs(pan_axis) >= dz:
-                pan_cmd = pan_axis * 90.0
+                pan_cmd = pan_axis  # Already normalized -1.0 to 1.0
             if abs(tilt_axis) >= dz:
-                tilt_cmd = tilt_axis * 30.0
+                tilt_cmd = tilt_axis  # Already normalized -1.0 to 1.0
             if pan_cmd is not None or tilt_cmd is not None:
                 try:
                     self.motors.move_head(pan=pan_cmd, tilt=tilt_cmd)
@@ -175,17 +175,8 @@ class DriveController:
                     pass
 
     def _initialize_head_position(self):
-        """Initialize head position targets from current motor position"""
-        try:
-            # Get current head position from motors
-            snapshot = self.motors.snapshot()
-            self._head_pan_target = snapshot.get('head_pan', 0.0) or 0.0
-            self._head_tilt_target = snapshot.get('head_tilt', 0.0) or 0.0
-            if self.debug:
-                print(f"Initialized head position: pan={self._head_pan_target}, tilt={self._head_tilt_target}")
-        except Exception as e:
-            # Default to center position if unable to read current position
-            self._head_pan_target = 0.0
-            self._head_tilt_target = 0.0
-            if self.debug:
-                print(f"Failed to initialize head position, using center: {e}")
+        """Initialize head position targets to center"""
+        self._head_pan_target = 0.0
+        self._head_tilt_target = 0.0
+        if self.debug:
+            print(f"Initialized head position to center: pan={self._head_pan_target}, tilt={self._head_tilt_target}")

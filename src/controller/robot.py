@@ -64,7 +64,12 @@ class RobotController:
             joystick_id=0,
             poll_hz=60.0,
             debug=debug,
+            config=self.config.config,
         )
+        
+        # Register custom joystick action handler for wake_robot
+        if self.joystick:
+            self.joystick.register_action_handler('wake_robot', self.wake_up)
 
         # Register global instance for API access
         global robot_instance
@@ -73,11 +78,11 @@ class RobotController:
     def start(self):
         if self.debug:
             logger.info("Starting robot...")
-        # Enter standby mode and begin wake word detection
-        self._return_to_standby()
-        # Start joystick after state is initialized
+        # Start joystick before entering standby
         if self.joystick:
             self.joystick.start()
+        # Enter standby mode and begin wake word detection
+        self._return_to_standby()
 
     def stop(self):
         if self.debug:
